@@ -1,4 +1,4 @@
-interface Sha256.Internal exposes [] imports [Bitwise]
+module Sha256.Internal exposing [preprocessMessage, u64ToBigEndianBytes] imports [Bitwise, Num]
 
 h0 : U32
 h0 = 0x6a09e667
@@ -59,3 +59,54 @@ smallSigma0 = \x -> Bitwise.xor (Bitwise.xor (rotr 7 x) (rotr 18 x)) (shr 3 x)
 
 smallSigma1 : U32 -> U32
 smallSigma1 = \x -> Bitwise.xor (Bitwise.xor (rotr 17 x) (rotr 19 x)) (shr 10 x)
+
+# Helper function to convert a U64 number to a list of 8 bytes in big-endian order.
+u64ToBigEndianBytes : U64 -> List U8
+u64ToBigEndianBytes = \n ->
+    [
+        Bitwise.shiftRightBy n 56 |> Num.toU8, # Most significant byte
+        Bitwise.shiftRightBy n 48 |> Num.toU8,
+        Bitwise.shiftRightBy n 40 |> Num.toU8,
+        Bitwise.shiftRightBy n 32 |> Num.toU8,
+        Bitwise.shiftRightBy n 24 |> Num.toU8,
+        Bitwise.shiftRightBy n 16 |> Num.toU8,
+        Bitwise.shiftRightBy n 8  |> Num.toU8,
+        Num.toU8 n                           # Least significant byte
+    ]
+
+# Preprocesses a message according to SHA-256 padding rules.
+# 1. Appends a '1' bit (0x80 byte).
+# 2. Appends '0' bits until message length is 448 mod 512 bits.
+# 3. Appends original message length in bits as a 64-bit big-endian integer.
+preprocessMessage : List U8 -> List U8
+preprocessMessage = \originalMessage ->
+    originalLengthBytes = List.len originalMessage |> Num.toU64
+
+    # Append the single '1' bit. In byte terms, this is 0x80.
+    # This marks the end of the original message.
+    messageWithAppendedBit = List.append originalMessage 0x80
+
+    # Calculate the number of zero bytes needed for padding.
+    # The total length of the message (original + 0x80 + zeros + 8-byte length)
+    # must be a multiple of 512 bits (64 bytes).
+    # So, originalLengthBytes + 1 (for 0x80) + numZeroBytes + 8 (for length) = N * 64.
+    # originalLengthBytes + 9 + numZeroBytes = N * 64.
+    # numZeroBytes = (N * 64) - (originalLengthBytes + 9).
+    # We want the smallest non-negative numZeroBytes, so we use modulo arithmetic.
+    # (originalLengthBytes + 9 + numZeroBytes) % 64 == 0
+    numZeroBytes = (64 - ((originalLengthBytes + 9) % 64)) % 64
+
+    # Create a list of zero bytes.
+    # `List.repeat` expects a USize for the count.
+    zeroPadding = List.repeat 0x00 (Num.toUSize numZeroBytes)
+
+    messageWithZeros = List.concat messageWithAppendedBit zeroPadding
+
+    # Calculate the original message length in bits.
+    originalLengthBits = originalLengthBytes * 8 # U64 multiplication
+
+    # Convert the length to an 8-byte list in big-endian order.
+    lengthBytes = u64ToBigEndianBytes originalLengthBits
+
+    # Append the length bytes to complete the padding.
+    List.concat messageWithZeros lengthBytes
