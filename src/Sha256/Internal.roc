@@ -1,4 +1,37 @@
-module Sha256.Internal exposes [rotr, shr, smallSigma0, smallSigma1, bytesToWordsBE, InvalidInput, generateMessageSchedule]
+module Sha256.Internal exposes [rotr, shr, smallSigma0, smallSigma1, ch, maj, bigSigma0, bigSigma1, bytesToWordsBE, InvalidInput, generateMessageSchedule, processChunk, Sha256State]
+
+Sha256State : {
+    h0 : U32,
+    h1 : U32,
+    h2 : U32,
+    h3 : U32,
+    h4 : U32,
+    h5 : U32,
+    h6 : U32,
+    h7 : U32,
+}
+
+# Initial Hash Values (H0-H7)
+h0 : U32 = 0x6a09e667
+h1 : U32 = 0xbb67ae85
+h2 : U32 = 0x3c6ef372
+h3 : U32 = 0xa54ff53a
+h4 : U32 = 0x510e527f
+h5 : U32 = 0x9b05688c
+h6 : U32 = 0x1f83d9ab
+h7 : U32 = 0x5be0cd19
+
+# Round Constants (K)
+kConstants : List U32 = [
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+]
 
 InvalidInput : []
 
@@ -21,6 +54,95 @@ smallSigma1 = \val ->
     (rotr 17 val)
         |> Bitwise.xor (rotr 19 val)
         |> Bitwise.xor (shr 10 val)
+
+ch : U32, U32, U32 -> U32
+ch = \x, y, z ->
+    (Bitwise.and x y)
+        |> Bitwise.xor (Bitwise.and (Bitwise.not x) z)
+
+maj : U32, U32, U32 -> U32
+maj = \x, y, z ->
+    (Bitwise.and x y)
+        |> Bitwise.xor (Bitwise.and x z)
+        |> Bitwise.xor (Bitwise.and y z)
+
+bigSigma0 : U32 -> U32
+bigSigma0 = \x ->
+    (rotr 2 x)
+        |> Bitwise.xor (rotr 13 x)
+        |> Bitwise.xor (rotr 22 x)
+
+bigSigma1 : U32 -> U32
+bigSigma1 = \x ->
+    (rotr 6 x)
+        |> Bitwise.xor (rotr 11 x)
+        |> Bitwise.xor (rotr 25 x)
+
+processChunk : Sha256State, List U32 -> Sha256State
+processChunk = \currentState, w ->
+    # Initialize working variables from the current hash state
+    workingVars = {
+        a: currentState.h0,
+        b: currentState.h1,
+        c: currentState.h2,
+        d: currentState.h3,
+        e: currentState.h4,
+        f: currentState.h5,
+        g: currentState.h6,
+        h: currentState.h7,
+    }
+
+    # Perform 64 rounds of computation
+    finalWorkingVars =
+        List.range 0 63 # Generates a list [0, 1, ..., 63]
+        |> List.walk workingVars \t, currentIterVars ->
+            # s1 = bigSigma1 e
+            s1 = bigSigma1 currentIterVars.e
+
+            # chVal = ch e f g
+            chVal = ch currentIterVars.e currentIterVars.f currentIterVars.g
+
+            # k_t = List.getUnsafe kConstants t
+            k_t = List.getUnsafe kConstants t
+
+            # w_t = List.getUnsafe w t
+            w_t = List.getUnsafe w t
+
+            # temp1 = h + s1 + chVal + k_t + w_t
+            temp1 = currentIterVars.h + s1 + chVal + k_t + w_t # U32 addition wraps
+
+            # s0 = bigSigma0 a
+            s0 = bigSigma0 currentIterVars.a
+
+            # majVal = maj a b c
+            majVal = maj currentIterVars.a currentIterVars.b currentIterVars.c
+
+            # temp2 = s0 + majVal
+            temp2 = s0 + majVal # U32 addition wraps
+
+            # Update working variables for the next iteration
+            {
+                a: temp1 + temp2, # a = temp1 + temp2
+                b: currentIterVars.a, # b = a
+                c: currentIterVars.b, # c = b
+                d: currentIterVars.c, # d = c
+                e: currentIterVars.d + temp1, # e = d + temp1
+                f: currentIterVars.e, # f = e
+                g: currentIterVars.f, # g = f
+                h: currentIterVars.g, # h = g
+            }
+
+    # Compute new intermediate hash values
+    {
+        h0: currentState.h0 + finalWorkingVars.a,
+        h1: currentState.h1 + finalWorkingVars.b,
+        h2: currentState.h2 + finalWorkingVars.c,
+        h3: currentState.h3 + finalWorkingVars.d,
+        h4: currentState.h4 + finalWorkingVars.e,
+        h5: currentState.h5 + finalWorkingVars.f,
+        h6: currentState.h6 + finalWorkingVars.g,
+        h7: currentState.h7 + finalWorkingVars.h,
+    }
 
 bytesToWordsBE : List U8 -> Result (List U32) InvalidInput
 bytesToWordsBE = \messageChunk ->
@@ -124,15 +246,69 @@ runBitwiseHelperTests =
     # Expected: 0x5d9d75dd XOR 0x75ddbb67 XOR 0x2ee1ebba = 0x0c0518c9
     expectU32Crash (smallSigma1 0xbb67ae85) 0x0c0518c9 "smallSigma1(0xbb67ae85)"
 
+    # Tests for ch
+    # e = 0x510e527f, f = 0x9b05688c, g = 0x1f83d9ab
+    # ch(e,f,g) = 0x1f84198c
+    expectU32Crash (ch 0x510e527f 0x9b05688c 0x1f83d9ab) 0x1f84198c "ch(H4,H5,H6 initial)"
+
+    # Tests for maj
+    # a = 0x6a09e667, b = 0xbb67ae85, c = 0x3c6ef372
+    # maj(a,b,c) = 0x306e0067
+    expectU32Crash (maj 0x6a09e667 0xbb67ae85 0x3c6ef372) 0x306e0067 "maj(H0,H1,H2 initial)"
+
+    # Tests for bigSigma0
+    # a = 0x6a09e667
+    # bigSigma0(a) = 0x50864d0d
+    expectU32Crash (bigSigma0 0x6a09e667) 0x50864d0d "bigSigma0(0x6a09e667)"
+
+    # Tests for bigSigma1
+    # e = 0x510e527f
+    # bigSigma1(e) = 0x79c66d87
+    expectU32Crash (bigSigma1 0x510e527f) 0x79c66d87 "bigSigma1(0x510e527f)"
+
     {} # Return empty record to match type
 
 # Run tests when module is loaded (useful for development feedback)
 # If this causes issues in a library context, it might be commented out or handled differently.
-_ = runBitwiseHelperTests
+
 
 #
 # Inline Tests for Message Schedule Generation
 #
+
+runProcessChunkTests : {}
+runProcessChunkTests =
+    initialState : Sha256State = {
+        h0: h0, # These refer to the global h0-h7 constants
+        h1: h1,
+        h2: h2,
+        h3: h3,
+        h4: h4,
+        h5: h5,
+        h6: h6,
+        h7: h7,
+    }
+
+    scheduleResult = generateMessageSchedule messageChunk_abc_bytes
+
+    when scheduleResult is
+        Err InvalidInput ->
+            crash "processChunk test: generateMessageSchedule failed for 'abc' chunk"
+
+        Ok schedule_W ->
+            newState = processChunk initialState schedule_W
+
+            # Known intermediate values for "abc" after first compression:
+            expectU32Crash newState.h0 0x29019097 "processChunk 'abc' H0'"
+            expectU32Crash newState.h1 0xf8355c50 "processChunk 'abc' H1'"
+            expectU32Crash newState.h2 0x51092d3c "processChunk 'abc' H2'"
+            expectU32Crash newState.h3 0x8a4d6170 "processChunk 'abc' H3'"
+            expectU32Crash newState.h4 0x57690f29 "processChunk 'abc' H4'"
+            expectU32Crash newState.h5 0x705cec03 "processChunk 'abc' H5'"
+            expectU32Crash newState.h6 0x4e9f139d "processChunk 'abc' H6'"
+            expectU32Crash newState.h7 0x4009f386 "processChunk 'abc' H7'"
+
+    {} # Return empty record
 
 messageChunk_abc_bytes : List U8
 messageChunk_abc_bytes =
@@ -187,4 +363,6 @@ runMessageScheduleTests =
 
     {} # Return empty record
 
+_ = runBitwiseHelperTests
 _ = runMessageScheduleTests
+_ = runProcessChunkTests
