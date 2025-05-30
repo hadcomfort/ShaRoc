@@ -1,4 +1,58 @@
-module Sha256.Internal exposes [rotr, shr, smallSigma0, smallSigma1, ch, maj, bigSigma0, bigSigma1, bytesToWordsBE, InvalidInput, generateMessageSchedule, processChunk, Sha256State]
+module Sha256.Internal exposing [rotr, shr, smallSigma0, smallSigma1, ch, maj, bigSigma0, bigSigma1, bytesToWordsBE, InvalidInput, generateMessageSchedule, processChunk, Sha256State, sha256Once, padMessage, u32sToBytes]
+
+# Placeholder for padMessage
+padMessage : List U8 -> List U8
+padMessage = \message -> message # Actual padding logic will be implemented later
+
+# Placeholder for u32sToBytes
+u32sToBytes : List U32 -> List U8
+u32sToBytes = \_u32s -> List.repeat 0 32 # Actual conversion logic will be implemented later (expects 8 U32s, returns 32 U8s)
+
+sha256Once : List U8 -> List U8
+sha256Once = \message ->
+    # 1. Initialize hash values
+    initialState : Sha256State = {
+        h0: h0, # These refer to the global h0-h7 constants
+        h1: h1,
+        h2: h2,
+        h3: h3,
+        h4: h4,
+        h5: h5,
+        h6: h6,
+        h7: h7,
+    }
+
+    # 2. Pad the message
+    paddedMessage = padMessage message
+
+    # 3. Process message in 512-bit (64-byte) chunks
+    finalState =
+        paddedMessage
+            |> List.chunksOf 64 # Process in 64-byte chunks
+            |> List.walk initialState \currentChunkState, chunk ->
+                # a. Generate message schedule (W) for the current chunk
+                when generateMessageSchedule chunk is
+                    Ok scheduleW ->
+                        # b. Process the chunk with the current hash state
+                        processChunk currentChunkState scheduleW
+                    Err InvalidInput ->
+                        # This case should ideally not happen with correct padding
+                        # For now, crash or return an error state; let's crash.
+                        crash "Invalid input to generateMessageSchedule during sha256Once"
+
+    # 4. Convert final hash state (List U32) to List U8
+    # The Sha256State record needs to be converted to a list of U32 first.
+    finalHashesU32 = [
+        finalState.h0,
+        finalState.h1,
+        finalState.h2,
+        finalState.h3,
+        finalState.h4,
+        finalState.h5,
+        finalState.h6,
+        finalState.h7,
+    ]
+    u32sToBytes finalHashesU32
 
 Sha256State : {
     h0 : U32,
