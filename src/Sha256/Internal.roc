@@ -1,112 +1,190 @@
-module Sha256.Internal exposing [preprocessMessage, u64ToBigEndianBytes] imports [Bitwise, Num]
+module Sha256.Internal exposes [rotr, shr, smallSigma0, smallSigma1, bytesToWordsBE, InvalidInput, generateMessageSchedule]
 
-h0 : U32
-h0 = 0x6a09e667
+InvalidInput : []
 
-h1 : U32
-h1 = 0xbb67ae85
+rotr : U8, U32 -> U32
+rotr = \n, val ->
+    (Bitwise.shiftRightBy val n) |> Bitwise.or (Bitwise.shiftLeftBy val (32 - n))
 
-h2 : U32
-h2 = 0x3c6ef372
-
-h3 : U32
-h3 = 0xa54ff53a
-
-h4 : U32
-h4 = 0x510e527f
-
-h5 : U32
-h5 = 0x9b05688c
-
-h6 : U32
-h6 = 0x1f83d9ab
-
-h7 : U32
-h7 = 0x5be0cd19
-
-k : List U32
-k = [
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
-]
-
-rotr : U32, U32 -> U32
-rotr = \n, x -> (x >> n) | (Bitwise.shiftLeftBy x (32 - n))
-
-shr : U32, U32 -> U32
-shr = \n, x -> x >> n
-
-ch : U32, U32, U32 -> U32
-ch = \x, y, z -> Bitwise.xor (Bitwise.and x y) (Bitwise.and (Bitwise.not x) z)
-
-maj : U32, U32, U32 -> U32
-maj = \x, y, z -> Bitwise.xor (Bitwise.xor (Bitwise.and x y) (Bitwise.and x z)) (Bitwise.and y z)
-
-bigSigma0 : U32 -> U32
-bigSigma0 = \x -> Bitwise.xor (Bitwise.xor (rotr 2 x) (rotr 13 x)) (rotr 22 x)
-
-bigSigma1 : U32 -> U32
-bigSigma1 = \x -> Bitwise.xor (Bitwise.xor (rotr 6 x) (rotr 11 x)) (rotr 25 x)
+shr : U8, U32 -> U32
+shr = \n, val ->
+    Bitwise.shiftRightBy val n
 
 smallSigma0 : U32 -> U32
-smallSigma0 = \x -> Bitwise.xor (Bitwise.xor (rotr 7 x) (rotr 18 x)) (shr 3 x)
+smallSigma0 = \val ->
+    (rotr 7 val)
+        |> Bitwise.xor (rotr 18 val)
+        |> Bitwise.xor (shr 3 val)
 
 smallSigma1 : U32 -> U32
-smallSigma1 = \x -> Bitwise.xor (Bitwise.xor (rotr 17 x) (rotr 19 x)) (shr 10 x)
+smallSigma1 = \val ->
+    (rotr 17 val)
+        |> Bitwise.xor (rotr 19 val)
+        |> Bitwise.xor (shr 10 val)
 
-# Helper function to convert a U64 number to a list of 8 bytes in big-endian order.
-u64ToBigEndianBytes : U64 -> List U8
-u64ToBigEndianBytes = \n ->
+bytesToWordsBE : List U8 -> Result (List U32) InvalidInput
+bytesToWordsBE = \messageChunk ->
+    if List.len messageChunk == 64 then
+        words =
+            messageChunk
+                |> List.chunksOf 4
+                |> List.map \chunk ->
+                    b1 = List.get chunk 0 |> Result.withDefault 0
+                    b2 = List.get chunk 1 |> Result.withDefault 0
+                    b3 = List.get chunk 2 |> Result.withDefault 0
+                    b4 = List.get chunk 3 |> Result.withDefault 0
+
+                    (Bitwise.shiftLeftBy (Num.toU32 b1) 24)
+                        |> Bitwise.or (Bitwise.shiftLeftBy (Num.toU32 b2) 16)
+                        |> Bitwise.or (Bitwise.shiftLeftBy (Num.toU32 b3) 8)
+                        |> Bitwise.or (Num.toU32 b4)
+
+        Ok words
+    else
+        Err InvalidInput
+
+generateMessageSchedule : List U8 -> Result (List U32) InvalidInput
+generateMessageSchedule = \messageChunk ->
+    bytesToWordsBE messageChunk
+    |> Result.try \initialWords ->
+        # Helper function to recursively build the schedule
+        buildSchedule = \currentSchedule, currentIndex ->
+            if currentIndex == 64 then
+                currentSchedule
+            else
+                # Indices for w[i-2], w[i-7], w[i-15], w[i-16]
+                # Need to handle potential out-of-bounds if using List.get directly,
+                # but currentSchedule will grow, so List.getUnsafe is an option if careful.
+                # Or, ensure currentSchedule is accessed safely.
+                # Roc's List.get returns a Result, which is safer.
+
+                # For List.get, need to handle the Result if a value might not exist,
+                # though for this algorithm, they should always exist after the initial 16 words.
+                # Using List.getUnsafe for simplicity here, assuming valid indices based on algorithm logic.
+                # A production system might prefer List.get and error handling or safer indexing.
+
+                wIMinus2 = List.getUnsafe currentSchedule (currentIndex - 2)
+                wIMinus7 = List.getUnsafe currentSchedule (currentIndex - 7)
+                wIMinus15 = List.getUnsafe currentSchedule (currentIndex - 15)
+                wIMinus16 = List.getUnsafe currentSchedule (currentIndex - 16)
+
+                s1 = smallSigma1 wIMinus2
+                s0 = smallSigma0 wIMinus15
+
+                # U32 addition wraps by default in Roc
+                newWord = s1 + wIMinus7 + s0 + wIMinus16
+
+                nextSchedule = List.append currentSchedule newWord
+                buildSchedule nextSchedule (currentIndex + 1)
+
+        # Start building the schedule from the initial 16 words,
+        # beginning calculation for index 16.
+        finalSchedule = buildSchedule initialWords 16
+        Ok finalSchedule
+
+#
+# Inline Tests for Bitwise Helpers
+#
+
+expectU32Crash : U32, U32, Str -> {}
+expectU32Crash = \actual, expected, description ->
+    if actual == expected then
+        {}
+    else
+        crash "Assertion failed: \(description). Expected 0x\(Num.toHex expected), got 0x\(Num.toHex actual)"
+
+runBitwiseHelperTests : {}
+runBitwiseHelperTests =
+    # Tests for rotr
+    expectU32Crash (rotr 8 0x12345678) 0x78123456 "rotr(8, 0x12345678)"
+    expectU32Crash (rotr 0 0x12345678) 0x12345678 "rotr(0, 0x12345678)"
+    expectU32Crash (rotr 32 0x12345678) 0x12345678 "rotr(32, 0x12345678)"
+    # Test with a value where bits shifted out from right are different from bits shifted in from left
+    expectU32Crash (rotr 4 0xABCDEF01) 0x1ABCDEF0 "rotr(4, 0xABCDEF01)"
+
+    # Tests for shr
+    expectU32Crash (shr 4 0x12345678) 0x01234567 "shr(4, 0x12345678)"
+    expectU32Crash (shr 0 0x12345678) 0x12345678 "shr(0, 0x12345678)"
+    expectU32Crash (shr 32 0x12345678) 0x00000000 "shr(32, 0x12345678)"
+    expectU32Crash (shr 8 0xFF00FF00) 0x00FF00FF "shr(8, 0xFF00FF00)"
+
+    # Tests for smallSigma0
+    # x = 0x6a09e667
+    # rotr(7,x)  = 0x0d413ccd (Note: prompt had 'u' suffix, Roc U32 literal doesn't use it)
+    # rotr(18,x) = 0x99a279a1
+    # shr(3,x)   = 0x0d413ccd
+    # Expected: 0x0d413ccd XOR 0x99a279a1 XOR 0x0d413ccd = 0x99a279a1
+    expectU32Crash (smallSigma0 0x6a09e667) 0x99a279a1 "smallSigma0(0x6a09e667)"
+
+    # Tests for smallSigma1
+    # x = 0xbb67ae85
+    # rotr(17,x) = 0x5d9d75dd
+    # rotr(19,x) = 0x75ddbb67
+    # shr(10,x)  = 0x2ee1ebba
+    # Expected: 0x5d9d75dd XOR 0x75ddbb67 XOR 0x2ee1ebba = 0x0c0518c9
+    expectU32Crash (smallSigma1 0xbb67ae85) 0x0c0518c9 "smallSigma1(0xbb67ae85)"
+
+    {} # Return empty record to match type
+
+# Run tests when module is loaded (useful for development feedback)
+# If this causes issues in a library context, it might be commented out or handled differently.
+_ = runBitwiseHelperTests
+
+#
+# Inline Tests for Message Schedule Generation
+#
+
+messageChunk_abc_bytes : List U8
+messageChunk_abc_bytes =
+    [0x61, 0x62, 0x63, 0x80]
+        |> List.concat (List.repeat 0x00 52)
+        |> List.concat [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18]
+
+expected_schedule_abc_prefix : List U32
+expected_schedule_abc_prefix =
     [
-        Bitwise.shiftRightBy n 56 |> Num.toU8, # Most significant byte
-        Bitwise.shiftRightBy n 48 |> Num.toU8,
-        Bitwise.shiftRightBy n 40 |> Num.toU8,
-        Bitwise.shiftRightBy n 32 |> Num.toU8,
-        Bitwise.shiftRightBy n 24 |> Num.toU8,
-        Bitwise.shiftRightBy n 16 |> Num.toU8,
-        Bitwise.shiftRightBy n 8  |> Num.toU8,
-        Num.toU8 n                           # Least significant byte
+        0x61626380, # W[0]
+        0x00000000, # W[1]
+        0x00000000, # W[2]
+        0x00000000, # W[3]
+        0x00000000, # W[4]
+        0x00000000, # W[5]
+        0x00000000, # W[6]
+        0x00000000, # W[7]
+        0x00000000, # W[8]
+        0x00000000, # W[9]
+        0x00000000, # W[10]
+        0x00000000, # W[11]
+        0x00000000, # W[12]
+        0x00000000, # W[13]
+        0x00000000, # W[14]
+        0x00000018, # W[15]
+        0x61626380, # W[16] = s1(W[14]) + W[7] + s0(W[1]) + W[0]
+                    # s1(0) = 0; W[7]=0; s0(0)=0; W[0]=0x61626380 => 0x61626380
+        0x000F0000, # W[17] = s1(W[15]) + W[8] + s0(W[2]) + W[1]
+                    # s1(0x18) = 0x000F0000; W[8]=0; s0(0)=0; W[1]=0 => 0x000F0000
     ]
 
-# Preprocesses a message according to SHA-256 padding rules.
-# 1. Appends a '1' bit (0x80 byte).
-# 2. Appends '0' bits until message length is 448 mod 512 bits.
-# 3. Appends original message length in bits as a 64-bit big-endian integer.
-preprocessMessage : List U8 -> List U8
-preprocessMessage = \originalMessage ->
-    originalLengthBytes = List.len originalMessage |> Num.toU64
+runMessageScheduleTests : {}
+runMessageScheduleTests =
+    scheduleResult = generateMessageSchedule messageChunk_abc_bytes
 
-    # Append the single '1' bit. In byte terms, this is 0x80.
-    # This marks the end of the original message.
-    messageWithAppendedBit = List.append originalMessage 0x80
+    when scheduleResult is
+        Err InvalidInput ->
+            crash "generateMessageSchedule returned InvalidInput for 'abc' chunk"
 
-    # Calculate the number of zero bytes needed for padding.
-    # The total length of the message (original + 0x80 + zeros + 8-byte length)
-    # must be a multiple of 512 bits (64 bytes).
-    # So, originalLengthBytes + 1 (for 0x80) + numZeroBytes + 8 (for length) = N * 64.
-    # originalLengthBytes + 9 + numZeroBytes = N * 64.
-    # numZeroBytes = (N * 64) - (originalLengthBytes + 9).
-    # We want the smallest non-negative numZeroBytes, so we use modulo arithmetic.
-    # (originalLengthBytes + 9 + numZeroBytes) % 64 == 0
-    numZeroBytes = (64 - ((originalLengthBytes + 9) % 64)) % 64
+        Ok actualScheduleWords ->
+            # Check length of the whole schedule
+            if List.len actualScheduleWords != 64 then
+                crash "generateMessageSchedule for 'abc' did not return 64 words. Got: \(List.len actualScheduleWords)"
+            else
+                # Check prefix
+                List.walkWithIndex expected_schedule_abc_prefix {} \index, acc, expectedWord ->
+                    actualWord = List.getUnsafe actualScheduleWords index # Safe due to length check of expected_schedule_abc_prefix
+                    description = "W[\(Num.toStr index)] for 'abc'"
+                    expectU32Crash actualWord expectedWord description
+                    acc
 
-    # Create a list of zero bytes.
-    # `List.repeat` expects a USize for the count.
-    zeroPadding = List.repeat 0x00 (Num.toUSize numZeroBytes)
+    {} # Return empty record
 
-    messageWithZeros = List.concat messageWithAppendedBit zeroPadding
-
-    # Calculate the original message length in bits.
-    originalLengthBits = originalLengthBytes * 8 # U64 multiplication
-
-    # Convert the length to an 8-byte list in big-endian order.
-    lengthBytes = u64ToBigEndianBytes originalLengthBits
-
-    # Append the length bytes to complete the padding.
-    List.concat messageWithZeros lengthBytes
+_ = runMessageScheduleTests
