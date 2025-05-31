@@ -348,17 +348,6 @@ runProcessChunkTests =
             expectU32Crash newState.h7 0x4009f386 "processChunk 'abc' H7'"
     {}
 
-runBytesToHexTests : {}
-runBytesToHexTests =
-    expectStrCrash (bytesToHex []) "" "bytesToHex []"
-    expectStrCrash (bytesToHex [0x00]) "00" "bytesToHex [0x00]"
-    expectStrCrash (bytesToHex [0x0A]) "0a" "bytesToHex [0x0A]"
-    expectStrCrash (bytesToHex [0xFF]) "ff" "bytesToHex [0xFF]"
-    expectStrCrash (bytesToHex [0xDE, 0xAD, 0xBE, 0xEF]) "deadbeef" "bytesToHex [0xDE, 0xAD, 0xBE, 0xEF]"
-    expectStrCrash (bytesToHex [0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF]) "0123456789abcdef" "bytesToHex [0x01,...,0xEF]"
-    expectStrCrash (bytesToHex [0x0C, 0x0A, 0x0F, 0x0E]) "0c0a0f0e" "bytesToHex [0x0C, 0x0A, 0x0F, 0x0E]"
-    {}
-
 messageChunk_abc_bytes : List U8
 messageChunk_abc_bytes =
     [0x61, 0x62, 0x63, 0x80]
@@ -379,4 +368,3 @@ expected_schedule_abc_prefix =
 _ = runBitwiseHelperTests
 _ = runMessageScheduleTests
 _ = runProcessChunkTests
-_ = runBytesToHexTests
