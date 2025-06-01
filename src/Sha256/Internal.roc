@@ -15,7 +15,6 @@
 ##
 module Sha256.Internal exposing [rotr, shr, smallSigma0, smallSigma1, ch, maj, bigSigma0, bigSigma1, bytesToWordsBE, InvalidInput, generateMessageSchedule, processChunk, Sha256State, sha256Once, padMessage, u32sToBytes, bytesToHex]
 
-# Placeholder for padMessage
 ## padMessage : List U8 -> List U8
 ##
 ## Purpose:
@@ -33,8 +32,6 @@ module Sha256.Internal exposing [rotr, shr, smallSigma0, smallSigma1, ch, maj, b
 ##
 ## Return Value:
 ##   - `List U8` - The padded message, ready for processing in 512-bit (64-byte) chunks.
-##
-## Note: This is currently a placeholder and needs the actual padding logic.
 padMessage : List U8 -> List U8
 padMessage = \message ->
     originalLenBytes = List.len message
@@ -88,7 +85,6 @@ padMessage = \message ->
 
     List.concat paddedMsgWithZeros lenBytes
 
-# Placeholder for u32sToBytes
 ## u32sToBytes : List U32 -> List U8
 ##
 ## Purpose:
@@ -100,8 +96,6 @@ padMessage = \message ->
 ##
 ## Return Value:
 ##   - `List U8` - A 32-byte list representing the concatenated hash values.
-##
-## Note: This is currently a placeholder and needs the actual conversion logic.
 u32sToBytes : List U32 -> List U8
 u32sToBytes = \u32s ->
     u32s
@@ -229,6 +223,9 @@ generateMessageSchedule = \messageChunk ->
         finalSchedule = buildSchedule initialWords 16
         Ok finalSchedule
 
+## InvalidInput
+## Represents an error condition, typically for inputs that don't meet expected criteria,
+## e.g., a message chunk provided to `generateMessageSchedule` that is not 64 bytes long.
 InvalidInput : []
 
 ## rotr : U8, U32 -> U32
