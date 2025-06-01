@@ -441,6 +441,7 @@ sha256Once = \message ->
                     Err InvalidInput ->
                         # This case should ideally not happen with correct padding
                         # For now, crash or return an error state; let's crash.
+                        # This crash should be unreachable if `padMessage` is implemented correctly, as `generateMessageSchedule` will only receive 64-byte chunks, thus `bytesToWordsBE` will not return `Err InvalidInput`.
                         crash "Invalid input to generateMessageSchedule during sha256Once"
 
     # 4. Convert final hash state (List U32) to List U8
