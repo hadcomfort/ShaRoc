@@ -54,9 +54,51 @@ main =
 
 ## Installation
 
-(Details on how to install and integrate the ShaRoc library into your Roc project will be provided here once packaging standards are more established.)
+To use the ShaRoc library in your Roc project, you'll need to add it as a dependency in your `Package.roc` file and then import the `Sha256` module in your Roc source files.
 
-You will typically add it as a dependency in your project's `Package.roc` file (or equivalent Roc package manifest).
+### 1. Add Dependency
+
+Open your project's `Package.roc` file and add `"roc-community/sha256"` to your `dependencies` list. If you don't have a `dependencies` section yet, you'll need to add it.
+
+For example, if your `Package.roc` looks like this:
+
+```roc
+package "your-username/your-project"
+    version "1.0.0"
+    exposes [MyModule]
+```
+
+You would modify it to include `ShaRoc` as a dependency:
+
+```roc
+package "your-username/your-project"
+    version "1.0.0"
+    exposes [MyModule]
+    dependencies [
+        "roc-community/sha256" # Add this line
+    ]
+```
+
+**Note on Package Resolution:** Roc's package management system is still evolving. Currently, how Roc fetches this dependency might vary:
+*   It might be fetched from a central Roc package registry (if available).
+*   You might need to specify a Git URL directly in the future, or use a local path for development.
+*   Please refer to the latest Roc documentation for the most up-to-date package management practices.
+
+### 2. Import Module
+
+Once the dependency is declared, you can import the `Sha256` module in your Roc files (e.g., `main.roc` or any other `.roc` file where you need hashing):
+
+```roc
+imports [
+    roc-community.sha256.Sha256,
+    # ... other imports
+]
+
+# Example usage:
+myHash = Sha256.hashStrToHex "hello roc"
+```
+
+The usage examples in the "Usage Examples" section of this README also demonstrate this import.
 
 ## Running Tests
 
