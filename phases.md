@@ -1,112 +1,111 @@
-**Phase 1: Core Logic Completion & Critical Fixes**
+**Phase 1: Ensuring Core Roc Spec Compliance & Robustness**
 
-This phase focuses on implementing missing critical functionality and resolving immediate code issues.
+*   **Context:** This phase addresses the primary potential deviation from the provided `rocdocs.txt` and ensures internal logic is robust.
+*   **Tasks:**
 
-1.  **Implement `padMessage` Function:**
-    *   **File:** `src/Sha256/Internal.roc`
-    *   **Task:** Replace the placeholder `padMessage` function with the full SHA-256 padding logic according to FIPS 180-4, Section 5.1.1:
-        1.  Append a single '1' bit (i.e., byte `0x80`).
-        2.  Append '0' bits (i.e., `0x00` bytes) until the message length in bits is congruent to 448 (mod 512). This means the length in bytes should be 56 (mod 64) *before* appending the length.
-        3.  Append the original message length (before padding) as a 64-bit big-endian integer representing the length in *bits*.
-    *   **Why:** This is essential for the SHA-256 algorithm to work correctly for all input sizes.
+    1.  **Clarify/Replace `Num.toHex` Usage:**
+        *   **File:** `src/Sha256/Internal.roc` (function `bytesToHex`) and `tests/TestSha256.roc` (helper `expectU32Crash`).
+        *   **Task:**
+            1.  **Verify:** Determine if `Num.toHex` is a standard Roc builtin function available across common platforms/Roc versions, or if it's an extension (e.g., specific to `basic-cli`). The `rocdocs.txt` does not list it.
+            2.  **If Standard/Commonly Available Extension:** Add a comment in `bytesToHex` clarifying its origin or assumed availability if not directly in the core `Num` spec per generic `rocdocs`.
+            3.  **If Not Standard/To Ensure Purity:** Implement a pure Roc helper function within `src/Sha256/Internal.roc`, for example:
+                `byteToHexChars : U8 -> { high : U8, low : U8 }` (returning ASCII bytes for hex chars) or `byteToSingleHexStr : U8 -> Str` (if small string concatenations are fine). Then, refactor `bytesToHex` to use this internal helper. This would make the library fully self-contained regarding hex conversion logic based purely on standard Roc types and operations found in `rocdocs.txt`.
+                Update `expectU32Crash` similarly if needed, or simplify its string formatting.
+        *   **Why:** Ensures the library relies only on documented Roc features or provides its own implementations for full portability and spec adherence.
+        *   **Context Needed:** Access to broader Roc documentation or knowledge about `Num.toHex`'s status.
 
-2.  **Implement `u32sToBytes` Function:**
-    *   **File:** `src/Sha256/Internal.roc`
-    *   **Task:** Replace the placeholder `u32sToBytes` function. It should take a `List U32` (expected to be the 8 final hash words) and convert it into a 32-byte `List U8`. Each U32 word must be converted to 4 bytes in big-endian order.
-        *   For a U32 `w`, the bytes are `(w >> 24) & 0xFF`, `(w >> 16) & 0xFF`, `(w >> 8) & 0xFF`, `w & 0xFF`.
-    *   **Why:** This is needed to produce the final byte-based hash output.
+    2.  **Confirm Invariant for `sha256Once` Error Handling:**
+        *   **File:** `src/Sha256/Internal.roc` (function `sha256Once`).
+        *   **Task:** Add an explicit comment above the `crash` site in `sha256Once` stating the invariant: "This crash should be unreachable if `padMessage` is implemented correctly, as `generateMessageSchedule` will only receive 64-byte chunks, thus `bytesToWordsBE` will not return `Err InvalidInput`."
+        *   **Why:** Makes the design decision clear and documents the expectation for internal consistency.
+        *   **Context Needed:** Understanding that `padMessage` is intended to always produce validly sized blocks for `generateMessageSchedule`.
 
-3.  **Remove Duplicate Function Definitions:**
-    *   **File:** `src/Sha256/Internal.roc`
-    *   **Task:** You have duplicate definitions for `bytesToWordsBE` and `generateMessageSchedule` towards the end of the file (before the "Inline Tests" section). Remove these latter definitions, keeping the primary ones at the top of the file.
-    *   **Why:** Reduces confusion and potential for unsynchronized code.
+    3.  **Final Review of Type Annotations and Docstrings:**
+        *   **Files:** `src/Sha256.roc`, `src/Sha256/Internal.roc`.
+        *   **Task:** Perform a quick pass over all function signatures and `##` docstrings.
+            *   Ensure type annotations accurately reflect the data types being used and are consistent with types available in `rocdocs.txt` (e.g., `List U8`, `Str`, `U32`, `Result`, etc.).
+            *   Verify clarity and accuracy of explanations, especially for parameters and return values in `Sha256.roc`.
+        *   **Why:** Enhances maintainability, usability, and ensures documentation matches the code.
+        *   **Context Needed:** Familiarity with the SHA-256 algorithm and Roc's type system.
 
-4.  **Review `sha256Once` Error Handling:**
-    *   **File:** `src/Sha256/Internal.roc`
-    *   **Task:** The `sha256Once` function currently `crash`es if `generateMessageSchedule` returns `Err InvalidInput`.
-        *   Verify that with a correct `padMessage` implementation, `generateMessageSchedule` will *never* receive a chunk that isn't 64 bytes long (thus `bytesToWordsBE` within it won't return `Err InvalidInput`).
-        *   If this invariant holds, the `crash` acts as an assertion for an internal library bug, which might be acceptable for "minimal".
-        *   For increased robustness, consider if `sha256Once` (even as internal) should propagate a `Result` type. However, if the public API functions don't return `Result`, this error would still need to be handled (e.g., by crashing, which is what happens now, or by returning a fixed error hash/empty list, which is generally not good for crypto).
-        *   **Recommendation for now:** Focus on making `padMessage` robust. If it's correct, the error path leading to the crash shouldn't be hit with valid API usage.
-    *   **Why:** Ensures library stability and predictable behavior.
+---
 
-**Phase 2: Testing Enhancements & Consistency**
+**Phase 2: Testing Finalization and Best Practices**
 
-This phase aims to make your tests more robust, idiomatic, and consolidated.
+*   **Context:** The testing setup is already very good. This phase is for minor polish.
+*   **Tasks:**
 
-1.  **Correct Test Function Calls:**
-    *   **File:** `tests/TestSha256.roc`
-    *   **Task:** In "`describe "hashStr NIST Vector Tests"`", you're calling `Sha256.hashStr`. The public API in `src/Sha256.roc` exposes `hashStrToHex`. Update these test calls to use `Sha256.hashStrToHex` to accurately test the exposed API.
-    *   **Why:** Ensures tests are validating the actual public interface.
+    1.  **Standardize Test Assertions (Optional Polish):**
+        *   **File:** `tests/TestSha256.roc`.
+        *   **Task:** Consider replacing calls to the adapted `expectU32Crash` and `expectStrCrash` helpers with direct `roc/Test.expectEq actual expected "description"` calls. The current adapted helpers returning `Result {} Str` and then using `runChecks` is functional, but direct `expectEq` is slightly more idiomatic `roc/Test` style.
+        *   **Why:** Minor improvement for idiomatic test style. The current approach is not incorrect.
+        *   **Context Needed:** Current `expectU32Crash` and `expectStrCrash` implementations.
 
-2.  **Migrate Inline Tests to `TestSha256.roc`:**
-    *   **File:** `src/Sha256/Internal.roc` and `tests/TestSha256.roc`
-    *   **Task:**
-        1.  Move the test logic from the "Inline Tests" section of `Internal.roc` (including `expectU32Crash`, `expectStrCrash`, `runBitwiseHelperTests`, `runMessageScheduleTests`, `runProcessChunkTests`, and associated test data like `messageChunk_abc_bytes`, `expected_schedule_abc_prefix`) into `tests/TestSha256.roc`.
-        2.  Adapt these tests to use the standard `roc/Test` framework (e.g., replace `expectU32Crash` with `expectEq`).
-        3.  Remove the `_ = run...Tests` lines from `Internal.roc` so tests don't run on module load.
-        4.  Ensure `Internal.roc` exposes any functions that these tests need (it seems to do so already).
-    *   **Why:** Consolidates all tests, uses the standard Roc testing mechanism, and prevents tests from running during normal module import.
+    2.  **Ensure Test Data is Self-Contained or Clearly Sourced:**
+        *   **File:** `tests/TestSha256.roc`.
+        *   **Task:** Briefly review `messageChunk_abc_bytes` and `expected_schedule_abc_prefix`. They seem to be correctly defined locally. Ensure any other non-trivial test data is either generated or its source (e.g., "NIST FIPS 180-4 Appendix X") is clear.
+        *   **Why:** Test clarity and reproducibility.
+        *   **Context Needed:** Test data definitions.
 
-3.  **Add Tests for New/Critical Logic:**
-    *   **File:** `tests/TestSha256.roc`
-    *   **Task:**
-        *   Write specific unit tests for the `padMessage` function. Test cases: empty message, short message ("abc"), messages with lengths around the block boundary (55, 56, 63, 64 bytes), and a message longer than 64 bytes. Verify the padding bits and the appended length are correct.
-        *   Write unit tests for the `u32sToBytes` function with known U32 values and their expected byte representations.
-    *   **Why:** Ensures correctness of the newly implemented critical components.
+---
 
-**Phase 3: Documentation, Licensing & API Polish**
+**Phase 3: Documentation & Repository Presentation**
 
-This phase focuses on making the library professional and easy for others to use.
+*   **Context:** Finalizing user-facing documentation and repository structure.
+*   **Tasks:**
 
-1.  **Resolve License Inconsistency:**
-    *   **Files:** `README.md`, `LICENSE`
-    *   **Task:** Your `LICENSE` file specifies "Unlicense", but your `README.md` (at the bottom) states "MIT License". Choose one license (Unlicense seems to be your primary choice) and make both files consistent.
-    *   **Why:** Crucial for legal clarity and professionalism.
+    1.  **Confirm License Statement in `README.md`:**
+        *   **File:** `README.md`.
+        *   **Task:** The `README.md` correctly states "MIT License", matching the `LICENSE` file. This item from your previous `phases.md` (referring to an Unlicense/MIT mismatch) is resolved in the current code state. No action needed here other than acknowledging it's correct.
+        *   **Why:** Legal clarity for users.
+        *   **Context Needed:** Current `README.md` and `LICENSE` files.
 
-2.  **Refine `README.md`:**
-    *   **File:** `README.md`
-    *   **Task:**
-        *   Update the "License" section to match your chosen license.
-        *   Under "Running Tests", add the explicit command: `roc test` (or `roc test tests/TestSha256.roc` if more specific).
-        *   Review usage examples for clarity. The current examples for printing `Stdout.line "... (Str.toUtf8 ...)"!` are correct for Roc but can be a bit verbose. Consider if simply showing the hash assignment and a comment about how to use/print it would be cleaner for a library README.
-        *   Ensure installation instructions are still relevant to current Roc package management practices. (They look like good placeholders).
-    *   **Why:** Improves user experience and clarity.
+    2.  **Organize Development Artifacts:**
+        *   **Files:** `phases.md`, `sha256-roc-library-plan.md`.
+        *   **Task:** Move these planning/development-specific markdown files into a subdirectory, e.g., `docs/dev/` or `meta/planning/`.
+        *   **Why:** Keeps the root directory cleaner for users primarily interested in the library itself, rather than its development history.
+        *   **Context Needed:** Repository root directory structure.
 
-3.  **Review In-Code Documentation:**
-    *   **Files:** `src/Sha256.roc`, `src/Sha256/Internal.roc`
-    *   **Task:** Briefly review all `##` documentation comments for accuracy, completeness, and clarity, especially for public API functions in `Sha256.roc`. Ensure parameters, return values, and any assumptions (like UTF-8 input for string functions) are clearly stated.
-    *   **Why:** Essential for maintainability and usability by others.
+    3.  **Enhance `README.md` (Minor):**
+        *   **File:** `README.md`.
+        *   **Task:**
+            *   Under "Running Tests", the commands `roc test` and `roc test tests/TestSha256.roc` are already good.
+            *   Consider adding a "Compliance" or "Standards" section briefly mentioning adherence to FIPS 180-4.
+            *   Review installation instructions for any updates based on Roc's package manager evolution (current placeholder is good).
+        *   **Why:** Improves user information and confidence.
+        *   **Context Needed:** `README.md` content.
 
-4.  **Consider Development Artifacts:**
-    *   **Files:** `phases.md`, `sha256-roc-library-plan.md`
-    *   **Task:** These files document your development process. For a public release, they are not typically part of the user-facing library documentation. Consider moving them into a `docs/development/` subdirectory or simply leaving them in the root if you prefer. The `README.md` should be the primary entry point for users.
-    *   **Why:** Keeps the root directory cleaner for users focusing on the library itself. (Minimal effort: leave as is).
+---
 
 **Phase 4: Final Review & Release Preparation**
 
-This is the last check before considering the library ready for a `0.1.0` release.
+*   **Context:** Last checks before considering the library ready for a stable release.
+*   **Tasks:**
 
-1.  **Code Formatting:**
-    *   **Files:** All `.roc` files.
-    *   **Task:** Run `roc format` on all your Roc source files to ensure consistent formatting.
-    *   **Why:** Improves code readability and adheres to community standards.
+    1.  **Apply Code Formatting:**
+        *   **Files:** All `.roc` files.
+        *   **Task:** Run `roc format .` (or equivalent) at the project root to ensure all Roc code adheres to standard formatting.
+        *   **Why:** Code consistency and readability.
+        *   **Context Needed:** Roc formatting tool installed.
 
-2.  **Final Code Review:**
-    *   **Files:** Primarily `src/` and `tests/`
-    *   **Task:** Do a pass over the codebase, looking for:
-        *   Any remaining placeholders or `TODO`s.
-        *   Clarity of variable names and logic.
-        *   Correct usage of Roc idioms.
-        *   Potential edge cases not covered by tests (though your NIST vectors are good).
-        *   Ensure all exposed functions in `Internal.roc` that are *not* intended for external use (even within the package by other modules than `Sha256.roc`) are clearly marked as such in their docs, or consider if they truly need to be in the module's `exposing` list. (Current setup seems fine as only `Sha256.roc` uses them).
-    *   **Why:** Catches any last-minute issues and polishes the code.
+    2.  **Conduct a Final Code Review:**
+        *   **Files:** Primarily `src/` and `tests/`.
+        *   **Task:** Perform a final read-through of the codebase, looking for:
+            *   Any remaining `TODO` comments or placeholders.
+            *   Clarity of variable names and logic flow.
+            *   Correct and idiomatic use of Roc standard library functions (cross-referencing `rocdocs.txt` for functions used).
+            *   Potential unhandled edge cases (though NIST vectors are good, a quick mental check).
+            *   Ensure all functions exposed by `Sha256.Internal` are truly necessary for `Sha256.roc` and that their purpose is clear (current exposure seems fine).
+        *   **Why:** Catches any overlooked issues and polishes the overall code quality.
+        *   **Context Needed:** Entire codebase.
 
-3.  **Validate `Package.roc`:**
-    *   **File:** `Package.roc`
-    *   **Task:** Ensure the package name (`"roc-community/sha256"`), version (`"0.1.0"`), and exposed modules (`[Sha256]`) are correct and ready for a potential public release.
-    *   **Why:** Ensures the package is correctly defined for Roc's ecosystem.
+    3.  **Validate `Package.roc` for Release:**
+        *   **File:** `Package.roc`.
+        *   **Task:** Confirm that the `package` name (e.g., `"roc-community/sha256"` or your preferred name), `version` (e.g., `"0.1.0"` seems appropriate for a first stable release after this plan), and `exposes` fields are accurate and ready for publishing/tagging.
+        *   **Why:** Ensures the package is correctly defined for the Roc ecosystem.
+        *   **Context Needed:** `Package.roc` content and desired package identity.
 
-4.  **Tag Release:**
-    *   **Task:** Once all steps are complete and you're satisfied, create a Git tag for your `v0.1.0` release.
-    *   **Why:** Marks a stable version for users to depend on
+    4.  **Tag Release (Post-Completion):**
+        *   **Task:** After all phases are completed and verified, create a Git tag (e.g., `v0.1.0`).
+        *   **Why:** Marks a stable, versioned point for users to depend on.
+        *   **Context Needed:** Git version control.
