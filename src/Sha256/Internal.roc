@@ -103,7 +103,16 @@ padMessage = \message ->
 ##
 ## Note: This is currently a placeholder and needs the actual conversion logic.
 u32sToBytes : List U32 -> List U8
-u32sToBytes = \_u32s -> List.repeat 0 32 # Actual conversion logic will be implemented later (expects 8 U32s, returns 32 U8s)
+u32sToBytes = \u32s ->
+    u32s
+        |> List.map \word ->
+            [
+                Num.toU8 (Bitwise.and (Bitwise.shiftRightBy word 24) 0xFF),
+                Num.toU8 (Bitwise.and (Bitwise.shiftRightBy word 16) 0xFF),
+                Num.toU8 (Bitwise.and (Bitwise.shiftRightBy word 8) 0xFF),
+                Num.toU8 (Bitwise.and word 0xFF),
+            ]
+        |> List.join
 
 ## bytesToHex : List U8 -> Str
 ##
