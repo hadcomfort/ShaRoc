@@ -4,7 +4,7 @@ imports [
     roc/Test exposing [describe, test, expectEq],
     ../src/Sha256 exposing [Sha256],
     ../src/Sha256/Internal exposing [
-        bytesToHex, padMessage, u32sToBytes, # Existing
+        bytesToHex, padMessage, u32sToBytes, byteToHexChars, # Added byteToHexChars
         rotr, shr, smallSigma0, smallSigma1, ch, maj, bigSigma0, bigSigma1, # Bitwise ops
         generateMessageSchedule, processChunk, Sha256State, InvalidInput, # Core processing
         h0 as h0_const, h1 as h1_const, h2 as h2_const, h3 as h3_const, # Initial hash values (aliased)
@@ -102,15 +102,47 @@ expected_schedule_abc_prefix =
     ]
 
 # Test Helper Functions (moved from Internal.roc)
-# These will be adapted or replaced by roc/Test framework later.
-expectU32Crash : U32, U32, Str -> Result {} Str # Modified to return Result for easier integration
+
+# Helper to convert U32 to a hex string using byteToHexChars
+u32ToHexStr : U32 -> Str
+u32ToHexStr = \val ->
+    b3 = Num.toU8 (Bitwise.and (Bitwise.shiftRightBy val 24) 0xFF) # MSB
+    b2 = Num.toU8 (Bitwise.and (Bitwise.shiftRightBy val 16) 0xFF)
+    b1 = Num.toU8 (Bitwise.and (Bitwise.shiftRightBy val 8) 0xFF)
+    b0 = Num.toU8 (Bitwise.and val 0xFF) # LSB
+
+    # byteToHexChars is imported from Sha256.Internal
+    charsB3 = byteToHexChars b3
+    charsB2 = byteToHexChars b2
+    charsB1 = byteToHexChars b1
+    charsB0 = byteToHexChars b0
+
+    hexCharList =
+        [
+            charsB3.high,
+            charsB3.low,
+            charsB2.high,
+            charsB2.low,
+            charsB1.high,
+            charsB1.low,
+            charsB0.high,
+            charsB0.low,
+        ]
+
+    when Str.fromUtf8 hexCharList is
+        Ok s -> s
+        Err _ ->
+            # This should be unreachable if byteToHexChars works as expected (ASCII output)
+            crash "u32ToHexStr: Str.fromUtf8 failed. This indicates an issue with non-ASCII chars."
+
+expectU32Crash : U32, U32, Str -> Result {} Str
 expectU32Crash = actual, expected, description ->
     if actual == expected then
         Ok {}
     else
-        Err "Assertion failed: \(description). Expected 0x\(Num.toHex expected), got 0x\(Num.toHex actual)"
+        Err "Assertion failed: \(description). Expected 0x\(u32ToHexStr expected), got 0x\(u32ToHexStr actual)"
 
-expectStrCrash : Str, Str, Str -> Result {} Str # Modified to return Result
+expectStrCrash : Str, Str, Str -> Result {} Str
 expectStrCrash = actual, expected, description ->
     if actual == expected then
         Ok {}
