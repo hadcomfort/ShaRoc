@@ -178,6 +178,41 @@ kConstants : List U32 = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 ]
 
+## bytesToWordsBE : List U8 -> Result (List U32) InvalidInput
+##
+## Purpose:
+##   Converts a 64-byte list (List U8) into a 16-word list (List U32)
+##   in big-endian order. This is used to prepare the first 16 words (W0-W15)
+##   of the message schedule for a SHA-256 chunk.
+##
+## Parameters:
+##   - `bytes` : `List U8` - A list of bytes. Expected to be exactly 64 bytes long.
+##
+## Return Value:
+##   - `Result (List U32) InvalidInput`:
+##     - `Ok (List U32)`: If the input list is 64 bytes long, returns a list of
+##       16 U32 words. Each word is formed from 4 consecutive bytes in
+##       big-endian order (e.g., bytes b0, b1, b2, b3 form the U32
+##       (b0 << 24) | (b1 << 16) | (b2 << 8) | b3).
+##     - `Err InvalidInput`: If the input list is not exactly 64 bytes long.
+bytesToWordsBE : List U8 -> Result (List U32) InvalidInput
+bytesToWordsBE = \bytes ->
+    if List.len bytes == 64 then
+        List.chunksOf bytes 4
+        |> List.map \chunk ->
+            b0 = List.getUnsafe chunk 0 |> Num.toU32
+            b1 = List.getUnsafe chunk 1 |> Num.toU32
+            b2 = List.getUnsafe chunk 2 |> Num.toU32
+            b3 = List.getUnsafe chunk 3 |> Num.toU32
+
+            (Bitwise.shiftLeftBy b0 24)
+                |> Bitwise.or (Bitwise.shiftLeftBy b1 16)
+                |> Bitwise.or (Bitwise.shiftLeftBy b2 8)
+                |> Bitwise.or b3
+        |> Ok
+    else
+        Err InvalidInput
+
 ## generateMessageSchedule : List U8 -> Result (List U32) InvalidInput
 ##
 ## Purpose:

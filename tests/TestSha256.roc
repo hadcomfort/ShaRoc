@@ -117,81 +117,94 @@ expectStrCrash = actual, expected, description ->
     else
         Err "Assertion failed: \(description). Expected "\(expected)", got "\(actual)""
 
-# Main Test Runner Functions (moved from Internal.roc)
-# These will be converted into `describe` and `test` blocks.
-runBitwiseHelperTestsPlatform = \{} -> # Renamed to avoid conflict if `main` tries to call it directly
-    results = [
-        expectU32Crash (rotr 8 0x12345678) 0x78123456 "rotr(8, 0x12345678)",
-        expectU32Crash (rotr 0 0x12345678) 0x12345678 "rotr(0, 0x12345678)",
-        expectU32Crash (rotr 32 0x12345678) 0x12345678 "rotr(32, 0x12345678)",
-        expectU32Crash (rotr 4 0xABCDEF01) 0x1ABCDEF0 "rotr(4, 0xABCDEF01)",
+# ------------- End of Moved Inline Tests from Internal.roc -------------
 
-        expectU32Crash (shr 4 0x12345678) 0x01234567 "shr(4, 0x12345678)",
-        expectU32Crash (shr 0 0x12345678) 0x12345678 "shr(0, 0x12345678)",
-        expectU32Crash (shr 32 0x12345678) 0x00000000 "shr(32, 0x12345678)",
-        expectU32Crash (shr 8 0xFF00FF00) 0x00FF00FF "shr(8, 0xFF00FF00)",
-
-        expectU32Crash (smallSigma0 0x6a09e667) 0x99a279a1 "smallSigma0(0x6a09e667)",
-        expectU32Crash (smallSigma1 0xbb67ae85) 0x0c0518c9 "smallSigma1(0xbb67ae85)",
-        expectU32Crash (ch 0x510e527f 0x9b05688c 0x1f83d9ab) 0x1f84198c "ch(H4,H5,H6 initial)",
-        expectU32Crash (maj 0x6a09e667 0xbb67ae85 0x3c6ef372) 0x306e0067 "maj(H0,H1,H2 initial)",
-        expectU32Crash (bigSigma0 0x6a09e667) 0x50864d0d "bigSigma0(0x6a09e667)",
-        expectU32Crash (bigSigma1 0x510e527f) 0x79c66d87 "bigSigma1(0x510e527f)",
-    ]
-    # Consolidate results: if any is Err, return the first Err. Otherwise Ok {}.
-    List.walkUntil results (Ok {}) acc, res ->
-        when res is
-            Ok {} -> Continue acc
+# Helper to run a list of checks that return Result {} Str
+runChecks = \checks ->
+    List.walkUntil checks (Ok {}) \_acc, checkResult ->
+        when checkResult is
+            Ok {} -> Continue (Ok {})
             Err msg -> Break (Err msg)
 
-runMessageScheduleTestsPlatform = \{} ->
-    scheduleResult = generateMessageSchedule messageChunk_abc_bytes
-
-    when scheduleResult is
-        Err InvalidInput ->
-            Err "generateMessageSchedule returned InvalidInput for 'abc' chunk"
-
-        Ok actualScheduleWords ->
-            if List.len actualScheduleWords != 64 then
-                Err "generateMessageSchedule for 'abc' did not return 64 words. Got: \(Num.toStr (List.len actualScheduleWords))"
-            else
-                # Check only the prefix for which we have expected values
-                List.walkWithIndex expected_schedule_abc_prefix (Ok {}) \index, acc, expectedWord ->
-                    when acc is
-                        Err e -> Err e # Propagate error
-                        Ok {} ->
-                            actualWord = List.getUnsafe actualScheduleWords index
-                            description = "W[\(Num.toStr index)] for 'abc'"
-                            expectU32Crash actualWord expectedWord description
-
-
-runProcessChunkTestsPlatform = \{} ->
-    initialState : Sha256State = {
-        h0: h0_const, h1: h1_const, h2: h2_const, h3: h3_const,
-        h4: h4_const, h5: h5_const, h6: h6_const, h7: h7_const,
-    } # Using _const to avoid conflict with top-level h0-h7 if they are also imported directly
-    scheduleResult = generateMessageSchedule messageChunk_abc_bytes
-    when scheduleResult is
-        Err InvalidInput ->
-            Err "processChunk test: generateMessageSchedule failed for 'abc' chunk"
-        Ok schedule_W ->
-            newState = processChunk initialState schedule_W
+internalBitwiseHelperTests =
+    describe "Internal Bitwise Helper Tests" [
+        test "all bitwise ops" <| \{} ->
             results = [
-                expectU32Crash newState.h0 0x29019097 "processChunk 'abc' H0'",
-                expectU32Crash newState.h1 0xf8355c50 "processChunk 'abc' H1'",
-                expectU32Crash newState.h2 0x51092d3c "processChunk 'abc' H2'",
-                expectU32Crash newState.h3 0x8a4d6170 "processChunk 'abc' H3'",
-                expectU32Crash newState.h4 0x57690f29 "processChunk 'abc' H4'",
-                expectU32Crash newState.h5 0x705cec03 "processChunk 'abc' H5'",
-                expectU32Crash newState.h6 0x4e9f139d "processChunk 'abc' H6'",
-                expectU32Crash newState.h7 0x4009f386 "processChunk 'abc' H7'",
-            ]
-            List.walkUntil results (Ok {}) acc, res ->
-                when res is
-                    Ok {} -> Continue acc
-                    Err msg -> Break (Err msg)
+                expectU32Crash (rotr 8 0x12345678) 0x78123456 "rotr(8, 0x12345678)",
+                expectU32Crash (rotr 0 0x12345678) 0x12345678 "rotr(0, 0x12345678)",
+                expectU32Crash (rotr 32 0x12345678) 0x12345678 "rotr(32, 0x12345678)",
+                expectU32Crash (rotr 4 0xABCDEF01) 0x1ABCDEF0 "rotr(4, 0xABCDEF01)",
 
-# ------------- End of Moved Inline Tests from Internal.roc -------------
+                expectU32Crash (shr 4 0x12345678) 0x01234567 "shr(4, 0x12345678)",
+                expectU32Crash (shr 0 0x12345678) 0x12345678 "shr(0, 0x12345678)",
+                expectU32Crash (shr 32 0x12345678) 0x00000000 "shr(32, 0x12345678)",
+                expectU32Crash (shr 8 0xFF00FF00) 0x00FF00FF "shr(8, 0xFF00FF00)",
+
+                expectU32Crash (smallSigma0 0x6a09e667) 0x99a279a1 "smallSigma0(0x6a09e667)",
+                expectU32Crash (smallSigma1 0xbb67ae85) 0x0c0518c9 "smallSigma1(0xbb67ae85)",
+                expectU32Crash (ch 0x510e527f 0x9b05688c 0x1f83d9ab) 0x1f84198c "ch(H4,H5,H6 initial)",
+                expectU32Crash (maj 0x6a09e667 0xbb67ae85 0x3c6ef372) 0x306e0067 "maj(H0,H1,H2 initial)",
+                expectU32Crash (bigSigma0 0x6a09e667) 0x50864d0d "bigSigma0(0x6a09e667)",
+                expectU32Crash (bigSigma1 0x510e527f) 0x79c66d87 "bigSigma1(0x510e527f)",
+            ]
+            when runChecks results is
+                Ok {} -> Test.pass
+                Err msg -> Test.fail msg
+    ]
+
+internalMessageScheduleTests =
+    describe "Internal Message Schedule Tests" [
+        test "schedule for 'abc' chunk" <| \{} ->
+            scheduleResult = generateMessageSchedule messageChunk_abc_bytes
+
+            when scheduleResult is
+                Err InvalidInput ->
+                    Test.fail "generateMessageSchedule returned InvalidInput for 'abc' chunk"
+
+                Ok actualScheduleWords ->
+                    if List.len actualScheduleWords != 64 then
+                        Test.fail "generateMessageSchedule for 'abc' did not return 64 words. Got: \(Num.toStr (List.len actualScheduleWords))"
+                    else
+                        # Check only the prefix for which we have expected values
+                        res = List.walkWithIndex expected_schedule_abc_prefix (Ok {}) \index, acc, expectedWord ->
+                            when acc is
+                                Err e -> Err e # Propagate error
+                                Ok {} ->
+                                    actualWord = List.getUnsafe actualScheduleWords index
+                                    description = "W[\(Num.toStr index)] for 'abc'"
+                                    expectU32Crash actualWord expectedWord description
+                        when res is
+                            Ok {} -> Test.pass
+                            Err msg -> Test.fail msg
+    ]
+
+internalProcessChunkTests =
+    describe "Internal Process Chunk Tests" [
+        test "process 'abc' chunk" <| \{} ->
+            initialState : Sha256State = {
+                h0: h0_const, h1: h1_const, h2: h2_const, h3: h3_const,
+                h4: h4_const, h5: h5_const, h6: h6_const, h7: h7_const,
+            }
+            scheduleResult = generateMessageSchedule messageChunk_abc_bytes
+            when scheduleResult is
+                Err InvalidInput ->
+                    Test.fail "processChunk test: generateMessageSchedule failed for 'abc' chunk"
+                Ok schedule_W ->
+                    newState = processChunk initialState schedule_W
+                    results = [
+                        expectU32Crash newState.h0 0x29019097 "processChunk 'abc' H0'",
+                        expectU32Crash newState.h1 0xf8355c50 "processChunk 'abc' H1'",
+                        expectU32Crash newState.h2 0x51092d3c "processChunk 'abc' H2'",
+                        expectU32Crash newState.h3 0x8a4d6170 "processChunk 'abc' H3'",
+                        expectU32Crash newState.h4 0x57690f29 "processChunk 'abc' H4'",
+                        expectU32Crash newState.h5 0x705cec03 "processChunk 'abc' H5'",
+                        expectU32Crash newState.h6 0x4e9f139d "processChunk 'abc' H6'",
+                        expectU32Crash newState.h7 0x4009f386 "processChunk 'abc' H7'",
+                    ]
+                    when runChecks results is
+                        Ok {} -> Test.pass
+                        Err msg -> Test.fail msg
+    ]
 
 main =
     describe "Sha256 Library Tests" [
@@ -310,7 +323,10 @@ main =
                 expectEq (Sha256.hashToHex inputBytes) "594847328451bdfa85056225462cc1d867d877fb388df0ce35f25ab5562bfbb5"
         ],
 
-        u32sToBytesTests # Add the new test suite here
+        u32sToBytesTests, # Add the new test suite here
+        internalBitwiseHelperTests,
+        internalMessageScheduleTests,
+        internalProcessChunkTests
     ]
 
 u32sToBytesTests =
