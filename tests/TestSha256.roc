@@ -3,7 +3,7 @@ module TestSha256 exposes [main]
 imports [
     roc/Test exposing [describe, test, expectEq],
     ../src/Sha256 exposing [Sha256],
-    ../src/Sha256/Internal exposing [bytesToHex, padMessage], # Added padMessage
+    ../src/Sha256/Internal exposing [bytesToHex, padMessage, u32sToBytes], # Added u32sToBytes
     roc/Str,
     roc/List,
     roc/Num, # Added Num
@@ -180,5 +180,37 @@ main =
                 #        3031323334353637303132333435363730313233343536373031323334353637
                 inputBytes = Str.toUtf8 "0123456701234567012345670123456701234567012345670123456701234567"
                 expectEq (Sha256.hashToHex inputBytes) "594847328451bdfa85056225462cc1d867d877fb388df0ce35f25ab5562bfbb5"
-        ]
+        ],
+
+        u32sToBytesTests # Add the new test suite here
+    ]
+
+u32sToBytesTests =
+    describe "u32sToBytes Tests" [
+        test "empty list" <| \{} ->
+            expectEq (u32sToBytes []) ([] : List U8) "Empty list converts to empty list",
+
+        test "one U32" <| \{} ->
+            expectEq (u32sToBytes [0x01020304]) ([0x01, 0x02, 0x03, 0x04] : List U8) "Single U32",
+
+        test "multiple U32s" <| \{} ->
+            expectEq
+                (u32sToBytes [0x01020304, 0x05060708])
+                ([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08] : List U8)
+                "Multiple U32s",
+
+        test "U32 with leading zeros in bytes" <| \{} ->
+            expectEq (u32sToBytes [0x00112233]) ([0x00, 0x11, 0x22, 0x33] : List U8) "Leading zero bytes",
+
+        test "U32 with 0xFF bytes" <| \{} ->
+            expectEq (u32sToBytes [0xFFEEDDCC]) ([0xFF, 0xEE, 0xDD, 0xCC] : List U8) "0xFF bytes",
+
+        test "list of all zeros U32" <| \{} ->
+            expectEq
+                (u32sToBytes [0x00000000, 0x00000000])
+                ([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00] : List U8)
+                "All zeros U32s",
+
+        test "list of all 0xFFFFFFFF U32" <| \{} ->
+            expectEq (u32sToBytes [0xFFFFFFFF]) ([0xFF, 0xFF, 0xFF, 0xFF] : List U8) "All 0xFFFFFFFF U32"
     ]
