@@ -30,20 +30,25 @@ app "myApp"
 main =
     # Example using hashStrToHex
     helloHashStr = Sha256.hashStrToHex "hello world"
-    Stdout.line "SHA-256 of 'hello world': (Str.toUtf8 helloHashStr)"! # Printing string requires toUtf8
+    # To print the hash, you'd convert it to UTF-8 for Stdout:
+    # Stdout.line "SHA-256 of 'hello world': (Str.toUtf8 helloHashStr)"!
 
     # Example using hashToHex
     byteList = [0x68, 0x65, 0x6c, 0x6c, 0x6f] # "hello"
     helloBytesHashStr = Sha256.hashToHex byteList
-    Stdout.line "SHA-256 of [0x68, 0x65, 0x6c, 0x6c, 0x6f]: (Str.toUtf8 helloBytesHashStr)"!
+    # To print the hash, you'd convert it to UTF-8 for Stdout:
+    # Stdout.line "SHA-256 of [0x68, 0x65, 0x6c, 0x6c, 0x6f]: (Str.toUtf8 helloBytesHashStr)"!
 
-    # Example using hash
+    # Example using hash (raw byte output)
     rawHashBytes = Sha256.hash byteList
-    # To print or use rawHashBytes, you might convert them to hex or handle as needed.
-    # For demonstration, let's use the library's own utility (if it were exposed, or you'd write one)
-    # Stdout.line "Raw hash bytes (hex): (Str.toUtf8 (Sha256.Internal.bytesToHex rawHashBytes))"!
-    # Since bytesToHex is internal, you'd typically use hashToHex directly if you need a string.
-    Stdout.line "SHA-256 of [0x68, 0x65, 0x6c, 0x6c, 0x6f] (using hash then manual hex for demo): (Str.toUtf8 helloBytesHashStr)"!
+    # rawHashBytes is a List U8. You can use it for cryptographic purposes
+    # or convert it to a hex string if needed for display.
+    # If you need a hex string, using Sha256.hashToHex (as shown above) is more direct.
+    # If you needed to print these specific raw bytes as hex, you would first
+    # need a way to convert a List U8 to a hex Str. For example:
+    # Stdout.line "Raw hash bytes (hex): (Str.toUtf8 (yourOwnBytesToHex rawHashBytes))"!
+    # For this demo, we'll just re-use helloBytesHashStr to show what its hex form would be:
+    Stdout.line "SHA-256 of [0x68, 0x65, 0x6c, 0x6c, 0x6f] (raw bytes, if converted to hex): (Str.toUtf8 helloBytesHashStr)"!
 
 
 # Note: To run these examples, you would need the Sha256 library available
@@ -104,8 +109,18 @@ The usage examples in the "Usage Examples" section of this README also demonstra
 
 To run the tests for this library:
 
-(Instructions for running tests, e.g., using `roc test tests/TestSha256.roc`, will be detailed here.)
+You can run all tests for the library using the following command in your terminal:
+
+```sh
+roc test
+```
+
+If you want to run tests for a specific file, you can specify the path:
+
+```sh
+roc test tests/TestSha256.roc
+```
 
 ## License
 
-This library is released under the MIT License. See the `LICENSE` file for more details.
+This library is released under the Unlicense. See the `LICENSE` file for more details.
