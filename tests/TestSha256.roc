@@ -3,10 +3,67 @@ module TestSha256 exposes [main]
 imports [
     roc/Test exposing [describe, test, expectEq],
     ../src/Sha256 exposing [Sha256],
-    ../src/Sha256/Internal exposing [bytesToHex],
+    ../src/Sha256/Internal exposing [bytesToHex, padMessage], # Added padMessage
     roc/Str,
-    roc/List
+    roc/List,
+    roc/Num, # Added Num
+    roc/Bitwise # Added Bitwise
 ]
+
+# Helper function to generate the expected 8-byte length suffix
+expectedLenBytes = \originalLenBits ->
+    [
+        Num.toU8 (Bitwise.shiftRightBy originalLenBits 56),
+        Num.toU8 (Bitwise.shiftRightBy originalLenBits 48),
+        Num.toU8 (Bitwise.shiftRightBy originalLenBits 40),
+        Num.toU8 (Bitwise.shiftRightBy originalLenBits 32),
+        Num.toU8 (Bitwise.shiftRightBy originalLenBits 24),
+        Num.toU8 (Bitwise.shiftRightBy originalLenBits 16),
+        Num.toU8 (Bitwise.shiftRightBy originalLenBits 8),
+        Num.toU8 originalLenBits,
+    ]
+
+# Helper function to verify padding properties
+verifyPadding = \originalMsg, paddedMsg, testNamePrefix ->
+    originalLenBytes = List.len originalMsg
+    originalLenBits = Num.toU64 originalLenBytes * 8
+
+    # Verification a: Total length is a multiple of 64
+    expectEq (Num.remBy (List.len paddedMsg) 64) 0 "$(testNamePrefix): Padded length multiple of 64"
+
+    # Verification b: 0x80 byte
+    when List.get paddedMsg originalLenBytes is
+        Ok val -> expectEq val 0x80 "$(testNamePrefix): Padding starts with 0x80"
+        Err _ -> Test.fail "$(testNamePrefix): Failed to get 0x80 byte at index $(Num.toStr originalLenBytes)"
+
+    # Verification c: Number of zero bytes
+    # Padded data part = msg + 0x80 + zeros. Length of this should be 56 mod 64.
+    # Total length = len(msg) + 1 (for 0x80) + numZeroBytes + 8 (for length field)
+    # numZeroBytes = Total length - len(msg) - 1 - 8
+    numZeroBytesCalculated = (List.len paddedMsg) - originalLenBytes - 1 - 8
+
+    # Check each zero byte individually
+    # Start index of zero bytes is originalLenBytes + 1
+    # End index (exclusive) of zero bytes is originalLenBytes + 1 + numZeroBytesCalculated
+    if numZeroBytesCalculated > 0 then
+        List.walk (List.range (originalLenBytes + 1) (originalLenBytes + 1 + numZeroBytesCalculated)) (Ok {}) <| \acc, index ->
+            when acc is
+                Ok {} ->
+                    when List.get paddedMsg index is
+                        Ok 0x00 -> Ok {}
+                        Ok other -> Err "$(testNamePrefix): Expected 0x00 at zero padding index $(Num.toStr index), got $(Num.toHex other)"
+                        Err _ -> Err "$(testNamePrefix): Failed to get byte at zero padding index $(Num.toStr index)"
+                Err err -> Err err
+        |> Result.mapError Test.fail
+        |> ignore # Discard the Ok {} result if successful
+    else if numZeroBytesCalculated < 0 then
+        Test.fail "$(testNamePrefix): Calculated negative number of zero bytes: $(Num.toStr numZeroBytesCalculated)"
+    # If numZeroBytesCalculated is 0, no zero bytes to check, which is fine.
+
+    # Verification d: Last 8 bytes are original length in bits (big-endian)
+    expectedLenSuffix = expectedLenBytes originalLenBits
+    actualLenSuffix = List.slice paddedMsg (List.len paddedMsg - 8) (List.len paddedMsg)
+    expectEq actualLenSuffix expectedLenSuffix "$(testNamePrefix): Length bytes correct"
 
 main =
     describe "Sha256 Library Tests" [
@@ -37,6 +94,43 @@ main =
 
             test "list of all 0xFF (4 bytes)" <| \{} ->
                 expectEq (bytesToHex [0xFF, 0xFF, 0xFF, 0xFF]) "ffffffff"
+        ],
+
+        describe "padMessage Tests" [
+            test "empty message" <| \{} ->
+                originalMsg = []
+                padded = padMessage originalMsg # Using direct padMessage from import
+                verifyPadding originalMsg padded "Empty message",
+
+            test "short message \"abc\"" <| \{} ->
+                originalMsg = Str.toUtf8 "abc" # [0x61, 0x62, 0x63]
+                padded = padMessage originalMsg
+                verifyPadding originalMsg padded "\"abc\"",
+
+            test "55-byte message" <| \{} ->
+                originalMsg = List.repeat 0x41 55 # 55 'A's
+                padded = padMessage originalMsg
+                verifyPadding originalMsg padded "55-byte message",
+
+            test "56-byte message" <| \{} ->
+                originalMsg = List.repeat 0x41 56 # 56 'A's
+                padded = padMessage originalMsg
+                verifyPadding originalMsg padded "56-byte message",
+
+            test "63-byte message" <| \{} ->
+                originalMsg = List.repeat 0x41 63 # 63 'A's
+                padded = padMessage originalMsg
+                verifyPadding originalMsg padded "63-byte message",
+
+            test "64-byte message" <| \{} ->
+                originalMsg = List.repeat 0x41 64 # 64 'A's
+                padded = padMessage originalMsg
+                verifyPadding originalMsg padded "64-byte message",
+
+            test "70-byte message" <| \{} ->
+                originalMsg = List.repeat 0x41 70 # 70 'A's
+                padded = padMessage originalMsg
+                verifyPadding originalMsg padded "70-byte message"
         ],
 
         describe "hashStr NIST Vector Tests" [

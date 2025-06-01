@@ -36,7 +36,57 @@ module Sha256.Internal exposing [rotr, shr, smallSigma0, smallSigma1, ch, maj, b
 ##
 ## Note: This is currently a placeholder and needs the actual padding logic.
 padMessage : List U8 -> List U8
-padMessage = \message -> message # Actual padding logic will be implemented later
+padMessage = \message ->
+    originalLenBytes = List.len message
+    originalLenBits = Num.toU64 originalLenBytes * 8
+
+    # 1. Append '1' bit (0x80 byte)
+    # Need to ensure `message` is mutable or a new list is created.
+    # Roc lists are persistent, so `List.append` creates a new list.
+    paddedMsg = List.append message 0x80
+
+    # 2. Append '0' bits (0x00 bytes) until message length in bits is 448 (mod 512)
+    # This means length in bytes is 56 (mod 64)
+    # currentLen after appending 0x80
+    currentLenWith80 = originalLenBytes + 1
+
+    # Number of zero bytes needed
+    # k such that (currentLenWith80 + k) % 64 == 56
+    # k = (56 - (currentLenWith80 % 64) + 64) % 64
+    # Note: In Roc, % is `Num.rem` for remainder. For true modulo with negative numbers,
+    # it's `(Num.rem n d + d) % d`, but here lengths are non-negative.
+    # `Num.remBy` is what we want for `mod`.
+    numZeroBytes =
+        targetPaddedDataLenMod64 = 56 # The length of (msg + 0x80 + zeros) % 64 should be 56
+        lenAfter80 = originalLenBytes + 1
+        lenAfter80Mod64 = Num.remBy lenAfter80 64
+
+        if lenAfter80Mod64 <= targetPaddedDataLenMod64 then
+            targetPaddedDataLenMod64 - lenAfter80Mod64
+        else
+            # Need to add enough zeros to reach targetPaddedDataLenMod64 in the *next* 64-byte block
+            targetPaddedDataLenMod64 - lenAfter80Mod64 + 64
+
+    # Append k zero bytes
+    # `List.repeat 0x00 numZeroBytes` creates the list of zeros
+    # `List.concat` can append it.
+    paddedMsgWithZeros = List.concat paddedMsg (List.repeat 0x00 numZeroBytes)
+
+    # 3. Append original message length as a 64-bit big-endian integer (in bits)
+    # originalLenBits is U64. Convert to 8 bytes, big-endian.
+    lenBytes =
+        [
+            Num.toU8 (Bitwise.shiftRightBy originalLenBits 56), # Most significant byte
+            Num.toU8 (Bitwise.shiftRightBy originalLenBits 48),
+            Num.toU8 (Bitwise.shiftRightBy originalLenBits 40),
+            Num.toU8 (Bitwise.shiftRightBy originalLenBits 32),
+            Num.toU8 (Bitwise.shiftRightBy originalLenBits 24),
+            Num.toU8 (Bitwise.shiftRightBy originalLenBits 16),
+            Num.toU8 (Bitwise.shiftRightBy originalLenBits 8),
+            Num.toU8 originalLenBits, # Least significant byte
+        ]
+
+    List.concat paddedMsgWithZeros lenBytes
 
 # Placeholder for u32sToBytes
 ## u32sToBytes : List U32 -> List U8
