@@ -1,13 +1,74 @@
+##
+# The `Sha256.Internal` module contains the core, non-public logic for the
+# SHA-256 hashing algorithm.
+#
+# Purpose:
+# This module encapsulates the detailed implementation of the SHA-256 algorithm,
+# including helper functions and state management. It is not intended for direct
+# external use.
+#
+# Disclaimer:
+# The contents of this module are considered internal implementation details.
+# They are subject to change without notice and should not be relied upon
+# directly by external code. Use the functions exposed by the `Sha256`
+# module instead.
+##
 module Sha256.Internal exposing [rotr, shr, smallSigma0, smallSigma1, ch, maj, bigSigma0, bigSigma1, bytesToWordsBE, InvalidInput, generateMessageSchedule, processChunk, Sha256State, sha256Once, padMessage, u32sToBytes, bytesToHex]
 
 # Placeholder for padMessage
+## padMessage : List U8 -> List U8
+##
+## Purpose:
+##   Implements the SHA-256 padding scheme as defined in FIPS 180-4, Section 5.1.1.
+##   The message is padded to ensure its total length is a multiple of 512 bits (64 bytes).
+##
+## Padding Steps:
+##   1. Append a '1' bit to the end of the message.
+##   2. Append '0' bits until the message length is 448 bits (56 bytes) modulo 512 bits (64 bytes).
+##      This means the padded message (excluding the length) will be 56, 120, 184, ... bytes long.
+##   3. Append the original message length as a 64-bit big-endian integer.
+##
+## Parameters:
+##   - `message` : `List U8` - The original message bytes.
+##
+## Return Value:
+##   - `List U8` - The padded message, ready for processing in 512-bit (64-byte) chunks.
+##
+## Note: This is currently a placeholder and needs the actual padding logic.
 padMessage : List U8 -> List U8
 padMessage = \message -> message # Actual padding logic will be implemented later
 
 # Placeholder for u32sToBytes
+## u32sToBytes : List U32 -> List U8
+##
+## Purpose:
+##   Converts a list of eight U32 hash values (h0-h7) into a 32-byte `List U8`
+##   in big-endian order. Each U32 is converted to 4 bytes.
+##
+## Parameters:
+##   - `u32s` : `List U32` - A list containing the eight 32-bit hash values.
+##
+## Return Value:
+##   - `List U8` - A 32-byte list representing the concatenated hash values.
+##
+## Note: This is currently a placeholder and needs the actual conversion logic.
 u32sToBytes : List U32 -> List U8
 u32sToBytes = \_u32s -> List.repeat 0 32 # Actual conversion logic will be implemented later (expects 8 U32s, returns 32 U8s)
 
+## bytesToHex : List U8 -> Str
+##
+## Purpose:
+##   Converts a list of bytes (typically a hash result) into its human-readable
+##   hexadecimal string representation. Each byte is converted to two hex characters.
+##
+## Parameters:
+##   - `bytes` : `List U8` - The list of bytes to convert.
+##
+## Return Value:
+##   - `Str` - The hexadecimal string representation of the input bytes.
+##
+## Example:
+##   bytesToHex [0xA4, 0xB7, 0x3F] == "a4b73f" (actual output might be uppercase based on Num.toHex)
 bytesToHex : List U8 -> Str
 bytesToHex = \bytes ->
     bytes
@@ -18,6 +79,12 @@ bytesToHex = \bytes ->
             else
                 acc |> Str.concat hexByte
 
+## Sha256State
+##
+## Purpose:
+## This record holds the eight 32-bit words that represent the intermediate
+## and final hash values (h0 through h7) during the SHA-256 computation process.
+## These values are updated after processing each message block.
 Sha256State : {
     h0 : U32,
     h1 : U32,
@@ -29,7 +96,46 @@ Sha256State : {
     h7 : U32,
 }
 
+## bytesToWordsBE : List U8 -> Result (List U32) InvalidInput
+##
+## Purpose:
+##   Converts a 512-bit (64-byte) message chunk into a list of sixteen 32-bit (U32) words.
+##   The conversion is done in big-endian format, where the first byte of a 4-byte sequence
+##   forms the most significant byte of the U32 word. This is step 1 of the message
+##   schedule generation described in FIPS 180-4, Section 6.2.
+##
+## Parameters:
+##   - `messageChunk` : `List U8` - A 64-byte list representing one block of the padded message.
+##
+## Return Value:
+##   - `Result (List U32) InvalidInput` -
+##     - `Ok (List U32)`: A list of 16 U32 words if the input chunk is valid (64 bytes).
+##     - `Err InvalidInput`: If the input `messageChunk` is not exactly 64 bytes long.
+bytesToWordsBE : List U8 -> Result (List U32) InvalidInput
+bytesToWordsBE = \messageChunk ->
+    if List.len messageChunk == 64 then
+        words =
+            messageChunk
+                |> List.chunksOf 4
+                |> List.map \chunk ->
+                    b1 = List.get chunk 0 |> Result.withDefault 0 # Default should ideally not be hit with 64-byte check
+                    b2 = List.get chunk 1 |> Result.withDefault 0
+                    b3 = List.get chunk 2 |> Result.withDefault 0
+                    b4 = List.get chunk 3 |> Result.withDefault 0
+
+                    (Bitwise.shiftLeftBy (Num.toU32 b1) 24)
+                        |> Bitwise.or (Bitwise.shiftLeftBy (Num.toU32 b2) 16)
+                        |> Bitwise.or (Bitwise.shiftLeftBy (Num.toU32 b3) 8)
+                        |> Bitwise.or (Num.toU32 b4)
+
+        Ok words
+    else
+        Err InvalidInput
+
 # Initial Hash Values (H0-H7)
+## These are the initial hash values, representing the first 32 bits of the
+## fractional parts of the square roots of the first 8 prime numbers (2 through 19).
+## As defined in FIPS 180-4, section 5.3.3.
 h0 : U32 = 0x6a09e667
 h1 : U32 = 0xbb67ae85
 h2 : U32 = 0x3c6ef372
@@ -40,6 +146,10 @@ h6 : U32 = 0x1f83d9ab
 h7 : U32 = 0x5be0cd19
 
 # Round Constants (K)
+## These are the round constants used in the SHA-256 compression function.
+## They represent the first 32 bits of the fractional parts of the cube roots
+## of the first 64 prime numbers (2 through 311).
+## As defined in FIPS 180-4, section 4.2.2.
 kConstants : List U32 = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -51,51 +161,164 @@ kConstants : List U32 = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
 ]
 
+## generateMessageSchedule : List U8 -> Result (List U32) InvalidInput
+##
+## Purpose:
+##   Creates the 64-word (U32) message schedule `W` for a single 512-bit (64-byte) message chunk.
+##   This is as per FIPS 180-4, Section 6.2, step 2. The first 16 words (W0-W15) are derived
+##   directly from the message chunk (using `bytesToWordsBE`). The remaining 48 words (W16-W63)
+##   are calculated using the formula:
+##   W_t = σ1(W_{t-2}) + W_{t-7} + σ0(W_{t-15}) + W_{t-16}
+##
+## Parameters:
+##   - `messageChunk` : `List U8` - A 64-byte list representing one block of the padded message.
+##
+## Return Value:
+##   - `Result (List U32) InvalidInput` -
+##     - `Ok (List U32)`: A list of 64 U32 words representing the message schedule `W`.
+##     - `Err InvalidInput`: If `bytesToWordsBE` fails (e.g., `messageChunk` is not 64 bytes).
+generateMessageSchedule : List U8 -> Result (List U32) InvalidInput
+generateMessageSchedule = \messageChunk ->
+    bytesToWordsBE messageChunk
+    |> Result.try \initialWords ->
+        # Helper function to recursively build the schedule
+        buildSchedule = \currentSchedule, currentIndex ->
+            if currentIndex == 64 then
+                currentSchedule
+            else
+                # Indices for w[t-2], w[t-7], w[t-15], w[t-16]
+                # Note: Roc list indices match t values directly here (0-based)
+                wTMinus2 = List.getUnsafe currentSchedule (currentIndex - 2)
+                wTMinus7 = List.getUnsafe currentSchedule (currentIndex - 7)
+                wTMinus15 = List.getUnsafe currentSchedule (currentIndex - 15)
+                wTMinus16 = List.getUnsafe currentSchedule (currentIndex - 16)
+
+                s1 = smallSigma1 wTMinus2
+                s0 = smallSigma0 wTMinus15
+
+                # U32 addition wraps by default in Roc, which is the desired behavior for SHA-256.
+                newWord = s1 + wTMinus7 + s0 + wTMinus16
+
+                nextSchedule = List.append currentSchedule newWord
+                buildSchedule nextSchedule (currentIndex + 1)
+
+        # Start building from index 16, as W0-W15 are `initialWords`
+        finalSchedule = buildSchedule initialWords 16
+        Ok finalSchedule
+
 InvalidInput : []
 
+## rotr : U8, U32 -> U32
+## Right-rotate a U32 value by n bits.
+## Parameters:
+##   - n: U8 - Number of bits to rotate by.
+##   - val: U32 - The value to rotate.
+## Returns: U32 - The rotated value.
 rotr : U8, U32 -> U32
 rotr = \n, val ->
     (Bitwise.shiftRightBy val n) |> Bitwise.or (Bitwise.shiftLeftBy val (32 - n))
 
+## shr : U8, U32 -> U32
+## Right-shift a U32 value by n bits (logical shift).
+## Parameters:
+##   - n: U8 - Number of bits to shift by.
+##   - val: U32 - The value to shift.
+## Returns: U32 - The shifted value.
 shr : U8, U32 -> U32
 shr = \n, val ->
     Bitwise.shiftRightBy val n
 
+## smallSigma0 : U32 -> U32
+## SHA-256 internal function sigma0 (small sigma 0), as defined in FIPS 180-4, section 4.1.2.
+## σ0(x) = ROTR^7(x) XOR ROTR^18(x) XOR SHR^3(x)
+## Parameters:
+##   - val: U32 - The input word.
+## Returns: U32 - The result of the smallSigma0 operation.
 smallSigma0 : U32 -> U32
 smallSigma0 = \val ->
     (rotr 7 val)
         |> Bitwise.xor (rotr 18 val)
         |> Bitwise.xor (shr 3 val)
 
+## smallSigma1 : U32 -> U32
+## SHA-256 internal function sigma1 (small sigma 1), as defined in FIPS 180-4, section 4.1.2.
+## σ1(x) = ROTR^17(x) XOR ROTR^19(x) XOR SHR^10(x)
+## Parameters:
+##   - val: U32 - The input word.
+## Returns: U32 - The result of the smallSigma1 operation.
 smallSigma1 : U32 -> U32
 smallSigma1 = \val ->
     (rotr 17 val)
         |> Bitwise.xor (rotr 19 val)
         |> Bitwise.xor (shr 10 val)
 
+## ch : U32, U32, U32 -> U32
+## SHA-256 internal function Ch (Choose), as defined in FIPS 180-4, section 4.1.2.
+## Ch(x, y, z) = (x AND y) XOR ((NOT x) AND z)
+## Parameters:
+##   - x: U32 - First input word.
+##   - y: U32 - Second input word.
+##   - z: U32 - Third input word.
+## Returns: U32 - The result of the Ch function.
 ch : U32, U32, U32 -> U32
 ch = \x, y, z ->
     (Bitwise.and x y)
         |> Bitwise.xor (Bitwise.and (Bitwise.not x) z)
 
+## maj : U32, U32, U32 -> U32
+## SHA-256 internal function Maj (Majority), as defined in FIPS 180-4, section 4.1.2.
+## Maj(x, y, z) = (x AND y) XOR (x AND z) XOR (y AND z)
+## Parameters:
+##   - x: U32 - First input word.
+##   - y: U32 - Second input word.
+##   - z: U32 - Third input word.
+## Returns: U32 - The result of the Maj function.
 maj : U32, U32, U32 -> U32
 maj = \x, y, z ->
     (Bitwise.and x y)
         |> Bitwise.xor (Bitwise.and x z)
         |> Bitwise.xor (Bitwise.and y z)
 
+## bigSigma0 : U32 -> U32
+## SHA-256 internal function Sigma0 (capital sigma 0), as defined in FIPS 180-4, section 4.1.2.
+## Σ0(x) = ROTR^2(x) XOR ROTR^13(x) XOR ROTR^22(x)
+## Parameters:
+##   - x: U32 - The input word.
+## Returns: U32 - The result of the bigSigma0 operation.
 bigSigma0 : U32 -> U32
 bigSigma0 = \x ->
     (rotr 2 x)
         |> Bitwise.xor (rotr 13 x)
         |> Bitwise.xor (rotr 22 x)
 
+## bigSigma1 : U32 -> U32
+## SHA-256 internal function Sigma1 (capital sigma 1), as defined in FIPS 180-4, section 4.1.2.
+## Σ1(x) = ROTR^6(x) XOR ROTR^11(x) XOR ROTR^25(x)
+## Parameters:
+##   - x: U32 - The input word.
+## Returns: U32 - The result of the bigSigma1 operation.
 bigSigma1 : U32 -> U32
 bigSigma1 = \x ->
     (rotr 6 x)
         |> Bitwise.xor (rotr 11 x)
         |> Bitwise.xor (rotr 25 x)
 
+## sha256Once : List U8 -> List U8
+##
+## Purpose:
+##   Orchestrates the entire SHA-256 hashing process for a given message.
+##   This involves:
+##     1. Initializing the hash state (H0-H7) (FIPS 180-4, Sec 5.3.3).
+##     2. Padding the input message (`padMessage`) (FIPS 180-4, Sec 5.1.1).
+##     3. Parsing the padded message into 512-bit (64-byte) blocks.
+##     4. Iteratively processing each block using `processChunk` (FIPS 180-4, Sec 6.2).
+##     5. Producing the final 256-bit (32-byte) hash value.
+##
+## Parameters:
+##   - `message` : `List U8` - The input message to be hashed.
+##
+## Return Value:
+##   - `List U8` - A 32-byte list representing the SHA-256 hash of the input message.
 sha256Once : List U8 -> List U8
 sha256Once = \message ->
     # 1. Initialize hash values
@@ -142,6 +365,30 @@ sha256Once = \message ->
     ]
     u32sToBytes finalHashesU32
 
+## processChunk : Sha256State, List U32 -> Sha256State
+##
+## Purpose:
+##   Performs the SHA-256 compression function on a single 512-bit (64-byte)
+##   message chunk. It takes the current hash state (intermediate hash values H(i-1))
+##   and the message schedule (W) for the current chunk, and computes the next
+##   intermediate hash state H(i). This is detailed in FIPS 180-4, Section 6.2.
+##
+## Steps:
+##   1. Initialize eight working variables (a, b, c, d, e, f, g, h) with the
+##      current intermediate hash values. (Sec 6.2, step 2)
+##   2. Perform 64 rounds of computation (t=0 to 63). In each round:
+##      - Calculate S1, Ch, Temp1, S0, Maj, Temp2.
+##      - Update the working variables a-h. (Sec 6.2, step 3)
+##   3. Compute the new intermediate hash values H(i) by adding the final
+##      working variables to the previous intermediate hash values H(i-1). (Sec 6.2, step 4)
+##
+## Parameters:
+##   - `currentState` : `Sha256State` - The current set of eight 32-bit intermediate hash values.
+##   - `w` : `List U32` - The 64-word message schedule for the current chunk.
+##
+## Return Value:
+##   - `Sha256State` - The updated set of eight 32-bit intermediate hash values after
+##     processing the chunk.
 processChunk : Sha256State, List U32 -> Sha256State
 processChunk = \currentState, w ->
     # Initialize working variables from the current hash state
