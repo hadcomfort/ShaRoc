@@ -114,10 +114,10 @@ nibbleToHexChar : U8 -> U8
 nibbleToHexChar = \nibble ->
     if nibble < 10 then
         # 0-9
-        nibble + Char.toU8 '0'
+        nibble + 0x30 # ASCII '0'
     else
         # 10-15 (a-f)
-        (nibble - 10) + Char.toU8 'a'
+        (nibble - 10) + 0x61 # ASCII 'a'
 
 ## byteToHexChars : U8 -> { high : U8, low : U8 }
 ## Converts a U8 byte into a record of two U8 ASCII hex characters.
