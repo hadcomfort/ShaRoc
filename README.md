@@ -123,4 +123,4 @@ roc test tests/TestSha256.roc
 
 ## License
 
-This library is released under the Unlicense. See the `LICENSE` file for more details.
+This library is released under the MIT License. See the `LICENSE` file for more details.
