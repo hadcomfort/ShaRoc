@@ -13,7 +13,7 @@
 # directly by external code. Use the functions exposed by the `Sha256`
 # module instead.
 ##
-module Sha256.Internal exposing [rotr, shr, smallSigma0, smallSigma1, ch, maj, bigSigma0, bigSigma1, bytesToWordsBE, InvalidInput, generateMessageSchedule, processChunk, Sha256State, sha256Once, padMessage, u32sToBytes, bytesToHex]
+module Sha256.Internal exposing [rotr, shr, smallSigma0, smallSigma1, ch, maj, bigSigma0, bigSigma1, bytesToWordsBE, InvalidInput, generateMessageSchedule, processChunk, Sha256State, sha256Once, padMessage, u32sToBytes, byteToHexChars, bytesToHex]
 
 ## padMessage : List U8 -> List U8
 ##
@@ -108,6 +108,31 @@ u32sToBytes = \u32s ->
             ]
         |> List.join
 
+## nibbleToHexChar : U8 -> U8
+## Converts a 4-bit nibble (0-15) to its ASCII hex character (0-9, a-f).
+nibbleToHexChar : U8 -> U8
+nibbleToHexChar = \nibble ->
+    if nibble < 10 then
+        # 0-9
+        nibble + Char.toU8 '0'
+    else
+        # 10-15 (a-f)
+        (nibble - 10) + Char.toU8 'a'
+
+## byteToHexChars : U8 -> { high : U8, low : U8 }
+## Converts a U8 byte into a record of two U8 ASCII hex characters.
+## e.g., 0x0A -> { high: '0' (48), low: 'a' (97) }
+## e.g., 0xFF -> { high: 'f' (102), low: 'f' (102) }
+byteToHexChars : U8 -> { high : U8, low : U8 }
+byteToHexChars = \byte ->
+    highNibble = Bitwise.shiftRightBy byte 4
+    lowNibble = Bitwise.and byte 0x0F
+
+    {
+        high: nibbleToHexChar highNibble,
+        low: nibbleToHexChar lowNibble,
+    }
+
 ## bytesToHex : List U8 -> Str
 ##
 ## Purpose:
@@ -121,16 +146,28 @@ u32sToBytes = \u32s ->
 ##   - `Str` - The hexadecimal string representation of the input bytes.
 ##
 ## Example:
-##   bytesToHex [0xA4, 0xB7, 0x3F] == "a4b73f" (actual output might be uppercase based on Num.toHex)
+##   bytesToHex [0xA4, 0xB7, 0x3F] == "a4b73f"
 bytesToHex : List U8 -> Str
 bytesToHex = \bytes ->
-    bytes
-        |> List.walk "" \acc, byte ->
-            hexByte = Num.toHex byte
-            if Str.countChars hexByte == 1 then
-                acc |> Str.concat "0" |> Str.concat hexByte
-            else
-                acc |> Str.concat hexByte
+    # Pre-allocate a list for all the hex characters (2 chars per input byte)
+    # This is an optimization to reduce re-allocations during List.append.
+    initialCapacity = List.len bytes * 2
+    hexCharsU8 : List U8 =
+        bytes
+            |> List.walk (List.withCapacity initialCapacity) \charListAcc, currentByte ->
+                hexPair = byteToHexChars currentByte
+                charListAcc
+                    |> List.append hexPair.high
+                    |> List.append hexPair.low
+
+    # Convert the list of U8 ASCII characters (which are valid UTF-8) to a Str.
+    # byteToHexChars is designed to only produce valid ASCII characters.
+    when Str.fromUtf8 hexCharsU8 is
+        Ok utf8Str -> utf8Str
+        Err _ ->
+            # This case should ideally be unreachable if byteToHexChars guarantees ASCII.
+            # ASCII is a subset of UTF-8, so Str.fromUtf8 should succeed.
+            crash "bytesToHex: Str.fromUtf8 failed. This indicates an issue with non-ASCII chars from byteToHexChars."
 
 ## Sha256State
 ##
