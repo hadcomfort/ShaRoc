@@ -7,8 +7,8 @@
 #
 # Inputs and Outputs:
 # The functions within this module primarily operate on `List U8` (list of bytes)
-# and `Str` (string) types. Outputs are generally `List U8` for raw hash bytes
-# or `Str` for hexadecimal string representations of hashes.
+# and `Str` (string) types. Outputs are generally a 32-byte `List U8` for raw hash bytes
+# or a 64-character `Str` for hexadecimal string representations of hashes.
 #
 # Exposed Functions:
 # - `hash`: Computes the SHA-256 hash of a `List U8` and returns a `List U8`.
