@@ -155,42 +155,6 @@ Sha256State : {
     h7 : U32,
 }
 
-## bytesToWordsBE : List U8 -> Result (List U32) InvalidInput
-##
-## Purpose:
-##   Converts a 512-bit (64-byte) message chunk into a list of sixteen 32-bit (U32) words.
-##   The conversion is done in big-endian format, where the first byte of a 4-byte sequence
-##   forms the most significant byte of the U32 word. This is step 1 of the message
-##   schedule generation described in FIPS 180-4, Section 6.2.
-##
-## Parameters:
-##   - `messageChunk` : `List U8` - A 64-byte list representing one block of the padded message.
-##
-## Return Value:
-##   - `Result (List U32) InvalidInput` -
-##     - `Ok (List U32)`: A list of 16 U32 words if the input chunk is valid (64 bytes).
-##     - `Err InvalidInput`: If the input `messageChunk` is not exactly 64 bytes long.
-bytesToWordsBE : List U8 -> Result (List U32) InvalidInput
-bytesToWordsBE = \messageChunk ->
-    if List.len messageChunk == 64 then
-        words =
-            messageChunk
-                |> List.chunksOf 4
-                |> List.map \chunk ->
-                    b1 = List.get chunk 0 |> Result.withDefault 0 # Default should ideally not be hit with 64-byte check
-                    b2 = List.get chunk 1 |> Result.withDefault 0
-                    b3 = List.get chunk 2 |> Result.withDefault 0
-                    b4 = List.get chunk 3 |> Result.withDefault 0
-
-                    (Bitwise.shiftLeftBy (Num.toU32 b1) 24)
-                        |> Bitwise.or (Bitwise.shiftLeftBy (Num.toU32 b2) 16)
-                        |> Bitwise.or (Bitwise.shiftLeftBy (Num.toU32 b3) 8)
-                        |> Bitwise.or (Num.toU32 b4)
-
-        Ok words
-    else
-        Err InvalidInput
-
 # Initial Hash Values (H0-H7)
 ## These are the initial hash values, representing the first 32 bits of the
 ## fractional parts of the square roots of the first 8 prime numbers (2 through 19).
@@ -513,53 +477,6 @@ processChunk = \currentState, w ->
         h6: currentState.h6 + finalWorkingVars.g,
         h7: currentState.h7 + finalWorkingVars.h,
     }
-
-bytesToWordsBE : List U8 -> Result (List U32) InvalidInput
-bytesToWordsBE = \messageChunk ->
-    if List.len messageChunk == 64 then
-        words =
-            messageChunk
-                |> List.chunksOf 4
-                |> List.map \chunk ->
-                    b1 = List.get chunk 0 |> Result.withDefault 0
-                    b2 = List.get chunk 1 |> Result.withDefault 0
-                    b3 = List.get chunk 2 |> Result.withDefault 0
-                    b4 = List.get chunk 3 |> Result.withDefault 0
-
-                    (Bitwise.shiftLeftBy (Num.toU32 b1) 24)
-                        |> Bitwise.or (Bitwise.shiftLeftBy (Num.toU32 b2) 16)
-                        |> Bitwise.or (Bitwise.shiftLeftBy (Num.toU32 b3) 8)
-                        |> Bitwise.or (Num.toU32 b4)
-
-        Ok words
-    else
-        Err InvalidInput
-
-generateMessageSchedule : List U8 -> Result (List U32) InvalidInput
-generateMessageSchedule = \messageChunk ->
-    bytesToWordsBE messageChunk
-    |> Result.try \initialWords ->
-        # Helper function to recursively build the schedule
-        buildSchedule = \currentSchedule, currentIndex ->
-            if currentIndex == 64 then
-                currentSchedule
-            else
-                # Indices for w[i-2], w[i-7], w[i-15], w[i-16]
-                wIMinus2 = List.getUnsafe currentSchedule (currentIndex - 2)
-                wIMinus7 = List.getUnsafe currentSchedule (currentIndex - 7)
-                wIMinus15 = List.getUnsafe currentSchedule (currentIndex - 15)
-                wIMinus16 = List.getUnsafe currentSchedule (currentIndex - 16)
-
-                s1 = smallSigma1 wIMinus2
-                s0 = smallSigma0 wIMinus15
-
-                newWord = s1 + wIMinus7 + s0 + wIMinus16
-
-                nextSchedule = List.append currentSchedule newWord
-                buildSchedule nextSchedule (currentIndex + 1)
-
-        finalSchedule = buildSchedule initialWords 16
-        Ok finalSchedule
 
 #
 # Inline Tests
